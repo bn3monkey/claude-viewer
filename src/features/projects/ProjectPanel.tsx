@@ -10,8 +10,9 @@ import { NewSessionDialog } from "./NewSessionDialog";
 
 type Target = { kind: "project"; project: Project } | { kind: "session"; project: Project; session: Session };
 
-/** 완료 0 → 빨강, 일부 완료 → 노랑, 전부 완료 → 초록 */
+/** 세션 없음 · 전부 완료 → 초록, 완료 0 → 빨강, 일부 완료 → 노랑 */
 function tagColor(p: Project) {
+  if (p.total === 0) return "green";
   if (p.done === 0) return "red";
   return p.done < p.total ? "yellow" : "green";
 }

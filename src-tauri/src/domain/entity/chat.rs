@@ -14,6 +14,25 @@ pub struct RateWindow {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct QuestionOption {
+    pub label: String,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct Question {
+    pub question: String,
+    /// 짧은 분류 라벨 (CLI 는 칩으로 보여준다).
+    pub header: String,
+    pub multi_select: bool,
+    pub options: Vec<QuestionOption>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
 #[ts(export)]
 pub enum ChatEvent {
@@ -50,6 +69,14 @@ pub enum ChatEvent {
         input: String,
         /// CLI 가 제안한 영구 허용 규칙 JSON 배열. "항상 허용" 에 그대로 돌려준다.
         suggestions: String,
+    },
+    /// AskUserQuestion 도구. 권한 요청과 같은 control_request 로 오지만 답은 선택지다.
+    Question {
+        request_id: String,
+        tool_use_id: String,
+        questions: Vec<Question>,
+        /// 원래 도구 입력 JSON. 답할 때 answers 를 덧붙여 그대로 돌려준다.
+        input: String,
     },
     /// assistant 메시지마다 붙는 토큰 사용량. 입력 세 값의 합이 현재 컨텍스트 크기다.
     Usage {

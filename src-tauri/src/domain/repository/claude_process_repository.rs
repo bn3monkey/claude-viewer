@@ -31,6 +31,7 @@ pub struct ProcessStatus {
 pub trait ClaudeProcessRepository: Send + Sync {
     fn spawn(&self, spec: SpawnSpec) -> Result<(), AppError>;
     /// stdin 에 사용자 메시지 1줄을 쓰고 busy 로 표시한다.
+    /// 응답 중에 쓰면 CLI 가 진행 중인 턴에 합쳐 읽는다 (result 는 한 번).
     fn write_stdin(&self, session_id: &str, text: &str) -> Result<(), AppError>;
     /// 권한 요청에 답한다. 턴이 이어지므로 busy 는 그대로.
     fn respond_permission(
@@ -39,6 +40,14 @@ pub trait ClaudeProcessRepository: Send + Sync {
         request_id: &str,
         allow: bool,
         updated_permissions: Option<&str>,
+    ) -> Result<(), AppError>;
+    /// AskUserQuestion 에 답한다. `answers` 는 (질문, 답) 쌍. 건너뛰기는 respond_permission 의 거부로 한다.
+    fn answer_question(
+        &self,
+        session_id: &str,
+        request_id: &str,
+        input: &str,
+        answers: &[(String, String)],
     ) -> Result<(), AppError>;
     fn kill(&self, session_id: &str) -> Result<(), AppError>;
     fn kill_all(&self);

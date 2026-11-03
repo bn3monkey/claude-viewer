@@ -9,7 +9,10 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 
-use crate::data::datasource::stream_json::{decode_line, encode_permission_response, encode_user_message};
+use crate::data::datasource::stream_json::{
+    decode_line, encode_control_error, encode_permission_response, encode_question_answer, encode_user_message,
+    unsupported_control_request,
+};
 use crate::domain::entity::{AppError, ChatEvent};
 use crate::domain::repository::{ClaudeProcessRepository, ProcessStatus, SessionStart, SpawnSpec};
 use crate::infrastructure::process::{kill_tree, tokio_command};
@@ -43,6 +46,17 @@ impl Shared {
             .lock()
             .unwrap()
             .retain(|tx| tx.send((session_id.to_string(), event.clone())).is_ok());
+    }
+
+    fn send_line(&self, session_id: &str, line: String) -> Result<(), AppError> {
+        let running = self.running.lock().unwrap();
+        let entry = running
+            .get(session_id)
+            .ok_or_else(|| AppError::Process("세션 프로세스가 없습니다.".into()))?;
+        entry
+            .stdin
+            .send(format!("{line}\n"))
+            .map_err(|_| AppError::Process("세션 프로세스가 이미 종료되었습니다.".into()))
     }
 
     fn set_busy(&self, session_id: &str, generation: u64, busy: bool) {
@@ -133,9 +147,20 @@ impl ClaudeProcessRepository for ClaudeProcessRepositoryImpl {
         self.runtime.spawn(async move {
             let mut lines = BufReader::new(stdout).lines();
             while let Ok(Some(line)) = lines.next_line().await {
+                if let Some((request_id, subtype)) = unsupported_control_request(&line) {
+                    let message = format!("Claude Viewer 가 아직 지원하지 않는 요청입니다: {subtype}");
+                    let _ = shared.send_line(&id, encode_control_error(&request_id, &message));
+                    shared.publish(&id, ChatEvent::Error { message });
+                    continue;
+                }
                 for event in decode_line(&line) {
-                    if matches!(event, ChatEvent::Result { .. }) {
-                        shared.set_busy(&id, generation, false);
+                    match event {
+                        ChatEvent::Result { .. } => shared.set_busy(&id, generation, false),
+                        // result 직후에 도착한 메시지는 새 턴이 된다. 출력이 다시 오면 busy 로 되돌린다.
+                        ChatEvent::AssistantText { .. } | ChatEvent::Thinking { .. } | ChatEvent::ToolUse { .. } => {
+                            shared.set_busy(&id, generation, true)
+                        }
+                        _ => {}
                     }
                     shared.publish(&id, event);
                 }
@@ -179,14 +204,17 @@ impl ClaudeProcessRepository for ClaudeProcessRepositoryImpl {
         allow: bool,
         updated_permissions: Option<&str>,
     ) -> Result<(), AppError> {
-        let running = self.shared.running.lock().unwrap();
-        let entry = running
-            .get(session_id)
-            .ok_or_else(|| AppError::Process("세션 프로세스가 없습니다.".into()))?;
-        entry
-            .stdin
-            .send(format!("{}\n", encode_permission_response(request_id, allow, updated_permissions)))
-            .map_err(|_| AppError::Process("세션 프로세스가 이미 종료되었습니다.".into()))
+        self.shared.send_line(session_id, encode_permission_response(request_id, allow, updated_permissions))
+    }
+
+    fn answer_question(
+        &self,
+        session_id: &str,
+        request_id: &str,
+        input: &str,
+        answers: &[(String, String)],
+    ) -> Result<(), AppError> {
+        self.shared.send_line(session_id, encode_question_answer(request_id, input, answers))
     }
 
     fn kill(&self, session_id: &str) -> Result<(), AppError> {

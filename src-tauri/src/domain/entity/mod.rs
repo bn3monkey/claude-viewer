@@ -9,7 +9,7 @@ pub mod settings;
 pub mod terminal;
 pub mod viewer;
 
-pub use chat::{ChatEvent, RateWindow};
+pub use chat::{ChatEvent, Question, QuestionOption, RateWindow};
 pub use git::{GitBranch, GitChange, GitChangeKind, GitCommit, GitDiff, GitOverview};
 pub use terminal::{TerminalKind, TerminalPaths, TerminalSession};
 pub use claude_binary::{ClaudeBinary, ClaudeSource};

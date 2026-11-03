@@ -81,6 +81,18 @@ pub fn session_respond_permission(
     session::respond_permission(&*state.process, &session_id, &request_id, allow, always_suggestions.as_deref())
 }
 
+/// `answers` 는 [질문, 답] 쌍의 배열.
+#[tauri::command(async)]
+pub fn session_answer_question(
+    state: State<'_, AppState>,
+    session_id: String,
+    request_id: String,
+    input: String,
+    answers: Vec<(String, String)>,
+) -> Result<(), AppError> {
+    session::answer_question(&*state.process, &session_id, &request_id, &input, &answers)
+}
+
 #[tauri::command(async)]
 pub fn session_abort(state: State<'_, AppState>, session_id: String) -> Result<(), AppError> {
     session::abort_session(&*state.process, &session_id)

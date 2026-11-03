@@ -57,6 +57,7 @@ pub fn run() {
             session_vm::session_send_message,
             session_vm::session_compact,
             session_vm::session_respond_permission,
+            session_vm::session_answer_question,
             session_vm::session_abort,
             session_vm::session_close,
             tree_vm::tree_read,

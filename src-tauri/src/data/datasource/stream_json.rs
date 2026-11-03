@@ -3,7 +3,7 @@
 
 use serde_json::{json, Value};
 
-use crate::domain::entity::{ChatEvent, RateWindow};
+use crate::domain::entity::{ChatEvent, Question, QuestionOption, RateWindow};
 
 pub fn encode_user_message(text: &str) -> String {
     json!({
@@ -36,6 +36,39 @@ pub fn encode_permission_response(
     .to_string()
 }
 
+/// AskUserQuestion 응답. 원래 입력에 `answers` (질문 → 답) 를 붙여 허용하면 CLI 가 도구 결과로 넘긴다.
+/// 여러 개를 고른 답은 `, ` 로 이어 붙인다.
+pub fn encode_question_answer(request_id: &str, input: &str, answers: &[(String, String)]) -> String {
+    let mut updated = serde_json::from_str::<Value>(input).unwrap_or_else(|_| json!({}));
+    updated["answers"] = answers.iter().map(|(q, a)| (q.clone(), Value::String(a.clone()))).collect();
+    json!({
+        "type": "control_response",
+        "response": {
+            "subtype": "success",
+            "request_id": request_id,
+            "response": { "behavior": "allow", "updatedInput": updated }
+        }
+    })
+    .to_string()
+}
+
+/// 앱이 처리하지 못하는 control_request 면 (request_id, subtype). 답하지 않으면 CLI 가 영원히 기다린다.
+pub fn unsupported_control_request(line: &str) -> Option<(String, String)> {
+    let value = serde_json::from_str::<Value>(line).ok()?;
+    if value["type"] != "control_request" || value["request"]["subtype"] == "can_use_tool" {
+        return None;
+    }
+    Some((str_of(&value["request_id"]), str_of(&value["request"]["subtype"])))
+}
+
+pub fn encode_control_error(request_id: &str, message: &str) -> String {
+    json!({
+        "type": "control_response",
+        "response": { "subtype": "error", "request_id": request_id, "error": message }
+    })
+    .to_string()
+}
+
 /// stdout 한 줄을 대화 이벤트로 바꾼다. 화면에 필요 없는 줄은 빈 Vec.
 pub fn decode_line(line: &str) -> Vec<ChatEvent> {
     let Ok(value) = serde_json::from_str::<Value>(line) else {
@@ -49,6 +82,16 @@ pub fn decode_line(line: &str) -> Vec<ChatEvent> {
         Some("assistant") | Some("user") => decode_message(&value),
         Some("control_request") if value["request"]["subtype"] == "can_use_tool" => {
             let request = &value["request"];
+            if request["tool_name"] == "AskUserQuestion" {
+                if let Some(questions) = parse_questions(&request["input"]) {
+                    return vec![ChatEvent::Question {
+                        request_id: str_of(&value["request_id"]),
+                        tool_use_id: str_of(&request["tool_use_id"]),
+                        questions,
+                        input: request["input"].to_string(),
+                    }];
+                }
+            }
             vec![ChatEvent::PermissionRequest {
                 request_id: str_of(&value["request_id"]),
                 tool_use_id: str_of(&request["tool_use_id"]),
@@ -85,6 +128,31 @@ pub fn decode_line(line: &str) -> Vec<ChatEvent> {
         }],
         _ => Vec::new(),
     }
+}
+
+/// 형식이 다르면 None — 일반 권한 요청으로 보여준다.
+fn parse_questions(input: &Value) -> Option<Vec<Question>> {
+    input["questions"]
+        .as_array()?
+        .iter()
+        .map(|q| {
+            Some(Question {
+                question: q["question"].as_str()?.to_string(),
+                header: str_of(&q["header"]),
+                multi_select: q["multiSelect"].as_bool().unwrap_or(false),
+                options: q["options"]
+                    .as_array()?
+                    .iter()
+                    .map(|o| {
+                        Some(QuestionOption {
+                            label: o["label"].as_str()?.to_string(),
+                            description: str_of(&o["description"]),
+                        })
+                    })
+                    .collect::<Option<_>>()?,
+            })
+        })
+        .collect()
 }
 
 const COMPACT_PREFIX: &str = "This session is being continued from a previous conversation";
@@ -176,6 +244,7 @@ fn summarize_tool_input(input: &Value) -> String {
     let summary = KEYS
         .iter()
         .find_map(|key| input[key].as_str())
+        .or_else(|| input["questions"][0]["question"].as_str())
         .map(str::to_string)
         .unwrap_or_else(|| if input.is_null() { String::new() } else { input.to_string() });
     truncate(summary.lines().next().unwrap_or_default(), 200)
@@ -283,6 +352,44 @@ mod tests {
         let deny: Value = serde_json::from_str(&encode_permission_response("r1", false, None)).unwrap();
         assert_eq!(deny["response"]["response"]["behavior"], "deny");
         assert!(deny["response"]["response"].get("updatedPermissions").is_none());
+    }
+
+    // 2.1.314 에서 실제로 받은 줄
+    #[test]
+    fn ask_user_question_round_trip() {
+        let request = r#"{"type":"control_request","request_id":"9151","request":{"subtype":"can_use_tool","tool_name":"AskUserQuestion","display_name":"AskUserQuestion","input":{"questions":[{"question":"Which color do you prefer?","header":"Color","options":[{"label":"Red","description":"red"},{"label":"Blue","description":"blue"}],"multiSelect":false}]},"tool_use_id":"t1","requires_user_interaction":true}}"#;
+        let events = decode_line(request);
+        let ChatEvent::Question { request_id, questions, input, .. } = &events[0] else {
+            panic!("{events:?}");
+        };
+        assert_eq!(request_id, "9151");
+        assert_eq!(questions[0].header, "Color");
+        assert_eq!(questions[0].options[1].label, "Blue");
+        assert!(!questions[0].multi_select);
+
+        let answer = encode_question_answer("9151", input, &[("Which color do you prefer?".into(), "Blue".into())]);
+        let answer: Value = serde_json::from_str(&answer).unwrap();
+        let response = &answer["response"]["response"];
+        assert_eq!(response["behavior"], "allow");
+        assert_eq!(response["updatedInput"]["answers"]["Which color do you prefer?"], "Blue");
+        assert_eq!(response["updatedInput"]["questions"][0]["header"], "Color");
+    }
+
+    #[test]
+    fn malformed_questions_fall_back_to_a_permission_request() {
+        let request = r#"{"type":"control_request","request_id":"r","request":{"subtype":"can_use_tool","tool_name":"AskUserQuestion","input":{"questions":"?"}}}"#;
+        assert!(matches!(decode_line(request)[0], ChatEvent::PermissionRequest { .. }));
+    }
+
+    #[test]
+    fn only_non_tool_control_requests_are_unsupported() {
+        let tool = r#"{"type":"control_request","request_id":"r","request":{"subtype":"can_use_tool"}}"#;
+        let other = r#"{"type":"control_request","request_id":"r2","request":{"subtype":"elicitation"}}"#;
+        assert_eq!(unsupported_control_request(tool), None);
+        assert_eq!(unsupported_control_request(other), Some(("r2".into(), "elicitation".into())));
+        assert!(decode_line(other).is_empty());
+        let error: Value = serde_json::from_str(&encode_control_error("r2", "x")).unwrap();
+        assert_eq!((error["response"]["subtype"].as_str(), error["response"]["request_id"].as_str()), (Some("error"), Some("r2")));
     }
 
     #[test]

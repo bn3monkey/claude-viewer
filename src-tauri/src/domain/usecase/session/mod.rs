@@ -69,9 +69,8 @@ pub fn send_message(deps: &SendDeps, request: &SendMessage) -> Result<String, Ap
         .ok_or_else(|| AppError::NotConnected("먼저 Claude 경로를 연결해 주세요.".into()))?;
 
     match deps.process.status(request.session_id) {
-        Some(status) if status.busy => {
-            return Err(AppError::SessionBusy("이전 응답이 끝난 뒤에 보낼 수 있습니다.".into()));
-        }
+        // 응답 중이면 진행 중인 턴에 덧붙인다. 모델·권한 변경은 다시 띄워야 하므로 다음 메시지로 미룬다.
+        Some(status) if status.busy => {}
         // 모델과 권한 모드는 실행 인자라서, 바뀌면 프로세스를 다시 띄워 이어간다.
         Some(status) if status.model != request.model || status.permission_mode.as_deref() != request.permission_mode => {
             deps.process.kill(request.session_id)?
@@ -111,6 +110,22 @@ pub fn respond_permission(
     always_suggestions: Option<&str>,
 ) -> Result<(), AppError> {
     process.respond_permission(session_id, request_id, allow, always_suggestions.filter(|_| allow))
+}
+
+/// AskUserQuestion 답. 답이 빈 질문은 빼고 보낸다 (CLI 는 답 없는 질문을 건너뛴 것으로 본다).
+pub fn answer_question(
+    process: &dyn ClaudeProcessRepository,
+    session_id: &str,
+    request_id: &str,
+    input: &str,
+    answers: &[(String, String)],
+) -> Result<(), AppError> {
+    let answers: Vec<(String, String)> = answers
+        .iter()
+        .filter(|(_, answer)| !answer.trim().is_empty())
+        .map(|(question, answer)| (question.clone(), answer.trim().to_string()))
+        .collect();
+    process.answer_question(session_id, request_id, input, &answers)
 }
 
 /// `/compact` 는 CLI 가 사용자 메시지로 받아 처리한다.
@@ -307,12 +322,25 @@ mod tests {
     }
 
     #[test]
-    fn busy_session_rejects_messages() {
+    fn busy_session_appends_to_the_running_turn_without_restarting() {
         let world = World::new();
         world.process.set_status_with_model("s", true, "opus");
-        let result = send_message(&world.deps(), &message("opus", None));
-        assert!(matches!(result, Err(AppError::SessionBusy(_))));
-        assert!(world.process.written().is_empty());
+        let request = SendMessage { permission_mode: Some("plan"), ..message("haiku", None) };
+        send_message(&world.deps(), &request).unwrap();
+        assert!(world.process.killed().is_empty());
+        assert!(world.process.spawned().is_empty());
+        assert_eq!(world.process.written(), vec![("s".to_string(), "안녕".to_string())]);
+    }
+
+    #[test]
+    fn blank_question_answers_are_dropped() {
+        let world = World::new();
+        let answers = [("색?".to_string(), " 파랑 ".to_string()), ("크기?".to_string(), "  ".to_string())];
+        answer_question(&world.process, "s", "r1", "{}", &answers).unwrap();
+        assert_eq!(
+            world.process.question_answers(),
+            vec![("r1".to_string(), vec![("색?".to_string(), "파랑".to_string())])]
+        );
     }
 
     #[test]

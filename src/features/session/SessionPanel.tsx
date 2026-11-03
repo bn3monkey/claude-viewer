@@ -49,7 +49,8 @@ export function SessionPanel() {
   // 다른 클라이언트에서 돌고 있는 세션에 끼어들면 대화가 갈라지므로 막는다.
   const runningElsewhere = !!session && session.state === "running" && !session.busy && session.messageCount > 0;
   const idle = !!session && !session.busy && !runningElsewhere && !sending;
-  const canCommit = idle && draft.trim().length > 0;
+  // 응답 중에도 보낼 수 있다. CLI 가 진행 중인 턴에 덧붙여 다음 단계에서 읽는다.
+  const canCommit = !!session && !runningElsewhere && !sending && draft.trim().length > 0;
   const usage = useMemo(() => summarizeUsage(events), [events]);
 
   const commit = async () => {
@@ -168,7 +169,9 @@ export function SessionPanel() {
               <span className="hint">
                 {runningElsewhere
                   ? "다른 곳(VSCode, 터미널)에서 진행 중인 세션입니다. 끝난 뒤에 보낼 수 있습니다."
-                  : "선택한 파일은 프롬프트에 @경로 로 자동 첨부됩니다"}
+                  : session.busy
+                    ? "응답 중에 보낸 메시지는 Claude 가 다음 단계에서 읽습니다 (모델·권한 변경은 다음 턴부터)"
+                    : "선택한 파일은 프롬프트에 @경로 로 자동 첨부됩니다"}
               </span>
               <span className="spacer" />
               <button className="danger" disabled={!session.busy} title="진행 중인 응답을 중단" onClick={() => abort(session.id)}>

@@ -20,7 +20,7 @@ type SessionVM = {
   events: Record<string, ChatEvent[]>;
   /** 이 앱에서 메시지를 보낸 세션. 로그를 다시 읽으면 실시간 이벤트와 겹치므로 다시 읽지 않는다. */
   live: Record<string, boolean>;
-  /** 아직 답하지 않은 권한 요청 id. 세션별. */
+  /** 아직 답하지 않은 권한 요청·질문 id. 세션별. */
   pending: Record<string, string[]>;
   /** 가장 최근에 받은 사용량 창 (계정 단위라 세션과 무관). */
   rateWindows: RateWindow[] | null;
@@ -29,6 +29,8 @@ type SessionVM = {
   send: (args: SendArgs) => Promise<boolean>;
   compact: (args: Omit<SendArgs, "text" | "attachedFile">) => Promise<void>;
   respondPermission: (sessionId: string, requestId: string, allow: boolean, alwaysSuggestions: string | null) => Promise<void>;
+  /** answers: [질문, 답] 쌍. 건너뛰기는 respondPermission(…, false, null). */
+  answerQuestion: (sessionId: string, requestId: string, input: string, answers: [string, string][]) => Promise<void>;
   abort: (sessionId: string) => Promise<void>;
 };
 
@@ -63,6 +65,11 @@ export const useSessionVM = create<SessionVM>((set, get) => ({
     if (ok !== undefined) setPending(sessionId, (ids) => ids.filter((id) => id !== requestId));
   },
 
+  answerQuestion: async (sessionId, requestId, input, answers) => {
+    const ok = await call("session_answer_question", { sessionId, requestId, input, answers });
+    if (ok !== undefined) setPending(sessionId, (ids) => ids.filter((id) => id !== requestId));
+  },
+
   abort: async (sessionId) => void (await call("session_abort", { sessionId })),
 }));
 
@@ -76,7 +83,7 @@ function append(id: string, event: ChatEvent) {
     useSessionVM.setState({ rateWindows: event.windows });
     return;
   }
-  if (event.kind === "permissionRequest") setPending(id, (ids) => [...ids, event.requestId]);
+  if (event.kind === "permissionRequest" || event.kind === "question") setPending(id, (ids) => [...ids, event.requestId]);
   // 프로세스가 끝나면 답할 수 없으므로 남은 요청을 지운다.
   if (event.kind === "exited" || event.kind === "result") setPending(id, () => []);
 

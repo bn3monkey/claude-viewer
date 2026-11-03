@@ -173,6 +173,18 @@ input:focus, textarea:focus { border-color: var(--accent); }
 .msg.permission pre, .msg.meta.compacted pre { margin: 4px 0 0; font: 11px/1.4 var(--mono); white-space: pre-wrap; max-height: 240px; overflow: auto; background: #1a1a1a; padding: 6px 8px; border-radius: 4px; color: var(--fg); }
 .msg.permission summary, .msg.meta.compacted summary { cursor: pointer; }
 .msg.permission .actions { display: flex; gap: 6px; }
+.msg.permission .plan { background: #1a1a1a; padding: 4px 10px; border-radius: 4px; max-height: 360px; overflow: auto; }
+.msg.question { border-left-color: var(--accent); background: #1f2533; }
+.msg.question.pending { box-shadow: 0 0 0 1px #2f4a7a; }
+.msg.question .q { display: flex; flex-direction: column; gap: 6px; }
+.msg.question .qtext { font-weight: 600; }
+.msg.question .qhead { font: 600 10px var(--mono); background: #2f4a7a; color: #dbe6ff; padding: 1px 6px; border-radius: 9px; margin-right: 6px; vertical-align: 1px; }
+.msg.question .qopts { display: flex; flex-direction: column; gap: 4px; }
+.msg.question .qopts button { display: flex; gap: 8px; align-items: flex-start; text-align: left; white-space: normal; padding: 5px 8px; }
+.msg.question .qopts button.picked { border-color: var(--accent); background: #233456; }
+.msg.question .qopts .mark { font-family: var(--mono); color: var(--accent); }
+.msg.question .qopts .desc { display: block; color: var(--fg2); font-size: 11px; margin-top: 1px; }
+.msg.question .qother { width: 100%; box-sizing: border-box; }
 
 /* git 패널 */
 .git { display: flex; flex-direction: column; height: 100%; min-height: 0; }

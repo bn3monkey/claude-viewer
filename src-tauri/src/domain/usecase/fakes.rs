@@ -103,11 +103,15 @@ pub struct FakeProcess {
     killed: Mutex<Vec<String>>,
     stopped: Mutex<HashMap<String, f64>>,
     permissions: Mutex<Vec<(String, bool, Option<String>)>>,
+    answers: Mutex<Vec<(String, Vec<(String, String)>)>>,
 }
 
 impl FakeProcess {
     pub fn permission_responses(&self) -> Vec<(String, bool, Option<String>)> {
         self.permissions.lock().unwrap().clone()
+    }
+    pub fn question_answers(&self) -> Vec<(String, Vec<(String, String)>)> {
+        self.answers.lock().unwrap().clone()
     }
     pub fn set_stopped_at(&self, id: &str, at: f64) {
         self.stopped.lock().unwrap().insert(id.into(), at);
@@ -149,6 +153,16 @@ impl ClaudeProcessRepository for FakeProcess {
         updated_permissions: Option<&str>,
     ) -> Result<(), AppError> {
         self.permissions.lock().unwrap().push((request_id.into(), allow, updated_permissions.map(String::from)));
+        Ok(())
+    }
+    fn answer_question(
+        &self,
+        _session_id: &str,
+        request_id: &str,
+        _input: &str,
+        answers: &[(String, String)],
+    ) -> Result<(), AppError> {
+        self.answers.lock().unwrap().push((request_id.into(), answers.to_vec()));
         Ok(())
     }
     fn write_stdin(&self, session_id: &str, text: &str) -> Result<(), AppError> {
