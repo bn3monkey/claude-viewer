@@ -1,0 +1,117 @@
+use tauri::http;
+use tauri::ipc::Response;
+use tauri::{AppHandle, Manager, State};
+
+use crate::domain::entity::{AppError, TextContent, ViewerMode};
+use crate::domain::usecase::viewer;
+use crate::presentation::state::AppState;
+
+#[tauri::command(async)]
+pub fn viewer_resolve_mode(path: String) -> ViewerMode {
+    viewer::resolve_viewer_mode(&path)
+}
+
+#[tauri::command(async)]
+pub fn viewer_read_text(state: State<'_, AppState>, path: String) -> Result<TextContent, AppError> {
+    viewer::read_text(&*state.fs, &*state.settings, &path)
+}
+
+/// PDF / DOCX 원본 바이트. JSON 배열이 아닌 ArrayBuffer 로 보낸다.
+#[tauri::command(async)]
+pub fn viewer_read_bytes(state: State<'_, AppState>, path: String) -> Result<Response, AppError> {
+    viewer::read_bytes(&*state.fs, &*state.settings, &path).map(Response::new)
+}
+
+#[tauri::command(async)]
+pub fn viewer_open_external(state: State<'_, AppState>, path: String) -> Result<(), AppError> {
+    viewer::open_external(&*state.fs, &*state.settings, &*state.shell, &path)
+}
+
+/// `htmlview` 스킴. 프로젝트 안의 HTML 과 그 파일이 참조하는 css·이미지를 그대로 서빙한다.
+/// URL 경로가 파일 경로 구조를 유지하므로 iframe 안의 상대 경로가 같은 폴더로 풀린다.
+/// 앱 CSP 를 물려받지 않도록 srcdoc 대신 이 스킴을 iframe src 로 쓴다.
+pub fn serve_html(app: &AppHandle, request: http::Request<Vec<u8>>) -> http::Response<Vec<u8>> {
+    let path = file_path_of(request.uri().path());
+    let state = app.state::<AppState>();
+    match viewer::read_bytes(&*state.fs, &*state.settings, &path) {
+        Ok(bytes) => http::Response::builder()
+            .status(200)
+            .header("Content-Type", mime_of(&path))
+            .header("Cache-Control", "no-store")
+            .body(bytes)
+            .unwrap(),
+        Err(e) => http::Response::builder()
+            .status(if matches!(e, AppError::OutsideProject(_)) { 403 } else { 404 })
+            .header("Content-Type", "text/plain; charset=utf-8")
+            .body(e.to_string().into_bytes())
+            .unwrap(),
+    }
+}
+
+/// `/C:/a/b.html` → `C:/a/b.html`, `/Users/a/b.html` 은 그대로.
+fn file_path_of(url_path: &str) -> String {
+    let decoded = percent_decode(url_path);
+    let is_windows_drive = decoded.as_bytes().get(2) == Some(&b':') && decoded.starts_with('/');
+    if is_windows_drive { decoded[1..].to_string() } else { decoded }
+}
+
+fn percent_decode(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        let decoded = (bytes[i] == b'%' && i + 3 <= bytes.len())
+            .then(|| std::str::from_utf8(&bytes[i + 1..i + 3]).ok())
+            .flatten()
+            .and_then(|hex| u8::from_str_radix(hex, 16).ok());
+        match decoded {
+            Some(byte) => {
+                out.push(byte);
+                i += 3;
+            }
+            None => {
+                out.push(bytes[i]);
+                i += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+fn mime_of(path: &str) -> &'static str {
+    let ext = std::path::Path::new(path)
+        .extension()
+        .map(|e| e.to_string_lossy().to_ascii_lowercase())
+        .unwrap_or_default();
+    match ext.as_str() {
+        "html" | "htm" => "text/html; charset=utf-8",
+        "css" => "text/css; charset=utf-8",
+        "js" | "mjs" => "text/javascript; charset=utf-8",
+        "json" => "application/json",
+        "svg" => "image/svg+xml",
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "ico" => "image/x-icon",
+        "woff" => "font/woff",
+        "woff2" => "font/woff2",
+        "ttf" => "font/ttf",
+        "mp4" => "video/mp4",
+        "txt" | "md" => "text/plain; charset=utf-8",
+        _ => "application/octet-stream",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn url_paths_map_to_file_paths() {
+        assert_eq!(file_path_of("/C:/Users/me/docs/a%20b.html"), "C:/Users/me/docs/a b.html");
+        assert_eq!(file_path_of("/Users/me/%ED%95%9C%EA%B8%80.html"), "/Users/me/한글.html");
+        assert_eq!(percent_decode("abc%"), "abc%");
+        assert_eq!(mime_of("x/style.CSS"), "text/css; charset=utf-8");
+    }
+}

@@ -1,0 +1,9 @@
+pub mod claude_binary_repository_impl;
+pub mod claude_process_repository_impl;
+pub mod clipboard_repository_impl;
+pub mod file_system_repository_impl;
+pub mod git_repository_impl;
+pub mod session_repository_impl;
+pub mod settings_repository_impl;
+pub mod shell_repository_impl;
+pub mod terminal_repository_impl;

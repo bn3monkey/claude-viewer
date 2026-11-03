@@ -1,0 +1,21 @@
+pub mod chat;
+pub mod claude_binary;
+pub mod error;
+pub mod fs_node;
+pub mod git;
+pub mod project;
+pub mod session;
+pub mod settings;
+pub mod terminal;
+pub mod viewer;
+
+pub use chat::{ChatEvent, RateWindow};
+pub use git::{GitBranch, GitChange, GitChangeKind, GitCommit, GitDiff, GitOverview};
+pub use terminal::{TerminalKind, TerminalPaths, TerminalSession};
+pub use claude_binary::{ClaudeBinary, ClaudeSource};
+pub use error::AppError;
+pub use fs_node::{FsKind, FsNode};
+pub use project::Project;
+pub use session::{Session, SessionState};
+pub use settings::{ProjectEntry, Settings};
+pub use viewer::{TextContent, ViewerMode, ViewerRequest};

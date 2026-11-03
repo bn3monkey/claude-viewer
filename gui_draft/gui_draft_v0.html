@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Viewer GUI Draft v0</title>
+<style>
+  :root{
+    --bg:#1e1e1e; --bg2:#252526; --bg3:#2d2d30; --line:#3c3c3c; --fg:#d4d4d4; --fg2:#9d9d9d;
+    --accent:#4e8cff; --red:#f14c4c; --yellow:#e5c07b; --green:#4ec97a; --blue:#3b9eff; --sel:#094771;
+    --claude:#d97757;
+    --mono:ui-monospace,Consolas,"Cascadia Mono",monospace;
+    --font:"Segoe UI","Malgun Gothic","Apple SD Gothic Neo",system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font:13px/1.45 var(--font)}
+  button,select,input,textarea{font:inherit;color:inherit}
+  button{background:var(--bg3);border:1px solid var(--line);border-radius:4px;padding:4px 10px;cursor:pointer}
+  button:hover{background:#3a3a3d}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  button.danger{background:#5a2727;border-color:#7a3333}
+  input,select,textarea{background:#3c3c3c;border:1px solid var(--line);border-radius:4px;padding:4px 8px}
+  .app{display:grid;height:100vh;grid-template-rows:44px 1fr 24px;grid-template-columns:260px 1fr 1fr;
+       grid-template-areas:"top top top" "left session viewer" "status status status"}
+
+  /* ① Claude 연결 UI */
+  .top{grid-area:top;display:flex;gap:8px;align-items:center;padding:0 10px;background:var(--bg3);border-bottom:1px solid var(--line)}
+  .top .label{color:var(--fg2);white-space:nowrap}
+  .top input{flex:1;font-family:var(--mono)}
+  .dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px}
+  .dot.ok{background:var(--green)} .dot.bad{background:var(--red)}
+
+  /* ② 왼쪽 패널 */
+  .left{grid-area:left;display:grid;grid-template-rows:20% 1fr;border-right:1px solid var(--line);min-height:0}
+  .panel{display:flex;flex-direction:column;min-height:0;background:var(--bg2)}
+  .panel h3{margin:0;padding:5px 10px;font-size:11px;font-weight:600;letter-spacing:.06em;color:var(--fg2);text-transform:uppercase;border-bottom:1px solid var(--line);background:var(--bg3)}
+  .panel .body{overflow:auto;flex:1}
+  .row{display:flex;align-items:center;gap:6px;padding:3px 8px;cursor:pointer;white-space:nowrap;user-select:none}
+  .row:hover{background:#2a2d2e}
+  .row.selected{background:var(--sel)}
+  .row .name{flex:1;overflow:hidden;text-overflow:ellipsis}
+  .row.session{padding-left:26px}
+  .ico{width:16px;text-align:center;flex:none;opacity:.9;display:inline-flex;align-items:center;justify-content:center}
+  .ico svg{width:14px;height:14px;display:block}
+  .ico.project-btn{cursor:pointer;border-radius:3px;color:var(--accent)}
+  .ico.project-btn:hover{background:#444}
+  .ico.claude{color:var(--claude)}
+  .tag{font-family:var(--mono);font-size:11px;padding:0 6px;border-radius:9px;color:#111;font-weight:600}
+  .tag.red{background:var(--red);color:#fff} .tag.yellow{background:var(--yellow)} .tag.green{background:var(--green)}
+  .state{width:8px;height:8px;border-radius:50%;flex:none}
+  .state.running{background:var(--red);box-shadow:0 0 0 2px #5a2727}
+  .state.done{background:var(--blue);box-shadow:0 0 0 2px #1f3a5a}
+
+  /* ③ 디렉터리 트리 */
+  .tree .row{padding-left:calc(8px + var(--d,0)*14px)}
+  .tree .row.file .ico{opacity:.6}
+  .tree .row.dragging{opacity:.4}
+  .tree .row.drop{outline:1px dashed var(--accent)}
+
+  /* ④ 세션 UI */
+  .session{grid-area:session;display:flex;flex-direction:column;min-width:0;border-right:1px solid var(--line)}
+  .session .head{display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--line);background:var(--bg3)}
+  .session .head .crumb{color:var(--fg2)}
+  .chat{flex:1;overflow:auto;padding:14px 16px;display:flex;flex-direction:column;gap:12px}
+  .msg{max-width:92%;padding:8px 12px;border-radius:8px;white-space:pre-wrap}
+  .msg.user{align-self:flex-end;background:#2b3a55}
+  .msg.assistant{align-self:flex-start;background:var(--bg3)}
+  .msg.tool{align-self:flex-start;background:#20261f;border-left:3px solid var(--green);font-family:var(--mono);font-size:12px;color:#b9c6b5}
+  .msg.thinking{align-self:flex-start;color:var(--fg2);font-style:italic}
+  .compose{border-top:1px solid var(--line);padding:8px 10px;display:flex;flex-direction:column;gap:6px;background:var(--bg2)}
+  .compose .ctx{display:flex;gap:8px;align-items:center;font-size:12px;color:var(--fg2);flex-wrap:wrap}
+  .chip{background:#3c3c3c;border-radius:4px;padding:1px 8px;font-family:var(--mono);color:var(--fg)}
+  .compose textarea{resize:vertical;min-height:64px;width:100%}
+  .compose .actions{display:flex;gap:8px;align-items:center}
+  .compose .actions .spacer{flex:1}
+
+  /* ⑤ 파일 뷰어 */
+  .viewer{grid-area:viewer;display:flex;flex-direction:column;min-width:0}
+  .viewer .tabs{display:flex;background:var(--bg3);border-bottom:1px solid var(--line);overflow:auto}
+  .viewer .tab{padding:6px 12px;border-right:1px solid var(--line);cursor:pointer;white-space:nowrap;color:var(--fg2)}
+  .viewer .tab.active{background:var(--bg);color:var(--fg);border-bottom:1px solid var(--bg);margin-bottom:-1px}
+  .viewer .vhead{display:flex;gap:8px;align-items:center;padding:4px 10px;border-bottom:1px solid var(--line);font-size:12px;color:var(--fg2)}
+  .viewer .vhead .spacer{flex:1}
+  .viewer .vbody{flex:1;overflow:auto;padding:12px 14px}
+  .viewer .vbody.hidden{display:none}
+  pre.code{margin:0;font:12px/1.5 var(--mono);counter-reset:ln}
+  pre.code span.l{display:block}
+  pre.code span.l::before{counter-increment:ln;content:counter(ln);display:inline-block;width:2.5em;color:#6e6e6e;text-align:right;margin-right:1em}
+  .kw{color:#569cd6}.fn{color:#dcdcaa}.str{color:#ce9178}.cm{color:#6a9955}.ty{color:#4ec9b0}
+  .md h1,.md h2{border-bottom:1px solid var(--line);padding-bottom:4px}
+  .md code{background:#3c3c3c;padding:0 4px;border-radius:3px;font-family:var(--mono)}
+  .pdf{background:#525659;padding:16px;display:flex;flex-direction:column;align-items:center;gap:12px}
+  .pdf .page{background:#fff;color:#222;width:360px;height:480px;padding:28px;font-size:11px}
+  .media{display:flex;align-items:center;justify-content:center;height:100%;color:var(--fg2)}
+  .media .frame{border:1px solid var(--line);background:#111;width:70%;aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px;font-size:32px}
+
+  .status{grid-area:status;display:flex;gap:16px;align-items:center;padding:0 10px;font-size:11px;background:#007acc;color:#fff}
+
+  /* 컨텍스트 메뉴 / 다이얼로그 */
+  .ctxmenu{position:fixed;z-index:50;min-width:200px;background:#252526;border:1px solid #454545;border-radius:6px;box-shadow:0 6px 18px rgba(0,0,0,.5);padding:4px 0;display:none}
+  .ctxmenu .it{padding:5px 14px;cursor:pointer;display:flex;gap:10px}
+  .ctxmenu .it:hover{background:var(--sel)}
+  .ctxmenu .it .k{margin-left:auto;color:var(--fg2);font-size:11px}
+  .ctxmenu hr{border:0;border-top:1px solid #454545;margin:4px 0}
+  .ctxmenu .it.dangerous{color:#f48771}
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:60;display:none;align-items:center;justify-content:center}
+  .overlay.show{display:flex}
+  .dialog{background:var(--bg2);border:1px solid var(--line);border-radius:8px;width:520px;max-width:92vw;box-shadow:0 10px 30px rgba(0,0,0,.6)}
+  .dialog h2{margin:0;font-size:14px;padding:12px 16px;border-bottom:1px solid var(--line)}
+  .dialog .dbody{padding:12px 16px;max-height:50vh;overflow:auto}
+  .dialog .dfoot{padding:10px 16px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end}
+  .dialog .row{padding:6px 8px;border-radius:4px;white-space:normal}
+  .dialog .row small{color:var(--fg2);font-family:var(--mono)}
+
+  /* 설명 주석 */
+  .note{position:fixed;right:12px;bottom:34px;z-index:40;width:340px;background:#1b1b1b;border:1px solid #555;border-radius:8px;padding:10px 12px;font-size:12px;box-shadow:0 8px 24px rgba(0,0,0,.6)}
+  .note h4{margin:0 0 6px;font-size:12px}
+  .note ol{margin:0;padding-left:18px}
+  .note li{margin:2px 0}
+  .note .close{position:absolute;top:6px;right:8px;cursor:pointer;color:var(--fg2)}
+  .badge{display:inline-block;background:var(--accent);color:#fff;border-radius:50%;width:16px;height:16px;line-height:16px;text-align:center;font-size:10px;margin-right:4px}
+  .hint{color:var(--fg2);font-size:11px}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <!-- 프로젝트 아이콘: 폴더가 아닌 '패키지/큐브' 모양 -->
+  <symbol id="i-project" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+    <path d="M3.3 7l8.7 5 8.7-5M12 22V12"/>
+  </symbol>
+  <!-- Claude 아이콘: 세션 행 전용 (방사형 별 모양) -->
+  <symbol id="i-claude" viewBox="0 0 24 24" fill="currentColor">
+    <path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8z"/>
+    <circle cx="19" cy="19" r="2"/><circle cx="5" cy="19" r="1.5"/><circle cx="19" cy="4" r="1.2"/>
+  </symbol>
+</svg>
+<div class="app">
+
+  <!-- ① Claude 연결 UI -->
+  <div class="top">
+    <span class="badge">1</span>
+    <span class="label">Claude 경로</span>
+    <input id="claudePath" value="C:\Users\me\.vscode\extensions\anthropic.claude-code-2.1.314-win32-x64\resources\native-binary\claude.exe" spellcheck="false">
+    <button onclick="autoFind()">자동 찾기</button>
+    <button onclick="alert('OS 파일 선택 다이얼로그가 열립니다 (claude / claude.exe 선택)')">수동 찾기</button>
+    <span style="width:1px;height:24px;background:var(--line)"></span>
+    <span id="connState"><span class="dot ok"></span>연결됨 · v2.1.314 · 세션 데이터: ~/.claude/projects</span>
+  </div>
+
+  <!-- ② 왼쪽: Project & Session (20%) + Project Tree -->
+  <div class="left">
+    <div class="panel">
+      <h3><span class="badge">2</span>Projects &amp; Sessions</h3>
+      <div class="body" id="projectList">
+        <div class="row project selected" data-kind="project" onclick="selectProject(this,'claude_viewer')">
+          <span class="ico">▾</span>
+          <span class="ico project-btn" title="프로젝트 폴더 선택 (File Picker)" onclick="event.stopPropagation();alert('폴더 선택 File Picker')"><svg><use href="#i-project"/></svg></span>
+          <span class="name">claude_viewer</span>
+          <span class="tag yellow" title="완료된 세션 / 전체 세션">1 / 3</span>
+        </div>
+        <div class="row session" data-kind="session"><span class="ico claude"><svg><use href="#i-claude"/></svg></span><span class="name">GUI 초안 및 설계 문서 작성</span><span class="state running" title="진행 중"></span></div>
+        <div class="row session" data-kind="session"><span class="ico claude"><svg><use href="#i-claude"/></svg></span><span class="name">요구사항 정리</span><span class="state done" title="완료"></span></div>
+        <div class="row session" data-kind="session"><span class="ico claude"><svg><use href="#i-claude"/></svg></span><span class="name" style="color:var(--fg2)">New Session...</span><span class="state running" title="진행 중"></span></div>
+
+        <div class="row project" data-kind="project" onclick="selectProject(this,'bn3monkey_server')">
+          <span class="ico">▸</span>
+          <span class="ico project-btn" title="프로젝트 폴더 선택 (File Picker)"><svg><use href="#i-project"/></svg></span>
+          <span class="name">bn3monkey_server</span>
+          <span class="tag green">2 / 2</span>
+        </div>
+        <div class="row project" data-kind="project" onclick="selectProject(this,'daily_report')">
+          <span class="ico">▸</span>
+          <span class="ico project-btn" title="프로젝트 폴더 선택 (File Picker)"><svg><use href="#i-project"/></svg></span>
+          <span class="name">daily_report</span>
+          <span class="tag red">0 / 1</span>
+        </div>
+        <div class="row" style="color:var(--fg2)" onclick="alert('폴더 선택 File Picker → Project 추가')"><span class="ico">＋</span><span class="name">프로젝트 열기…</span></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3><span class="badge">3</span>Project Tree · <span id="treeTitle">claude_viewer</span></h3>
+      <div class="body tree" id="tree" data-kind="empty">
+        <div class="row dir" style="--d:0" data-kind="dir"><span class="ico">▾</span><span class="ico">📁</span><span class="name">design</span></div>
+        <div class="row file" style="--d:1" data-kind="file" data-ext="md" onclick="openFile(this,'design/design_v0.md','mdsrc')"><span class="ico">📝</span><span class="name">design_v0.md</span></div>
+        <div class="row dir" style="--d:0" data-kind="dir"><span class="ico">▾</span><span class="ico">📁</span><span class="name">gui_draft</span></div>
+        <div class="row file" style="--d:1" data-kind="file" data-ext="html" onclick="openFile(this,'gui_draft/gui_draft_v0.html','html')"><span class="ico">🌐</span><span class="name">gui_draft_v0.html</span></div>
+        <div class="row dir" style="--d:0" data-kind="dir"><span class="ico">▾</span><span class="ico">📁</span><span class="name">requirement</span></div>
+        <div class="row file selected" style="--d:1" data-kind="file" data-ext="md" onclick="openFile(this,'requirement/requirement_v0.md','mdsrc')"><span class="ico">📝</span><span class="name">requirement_v0.md</span></div>
+        <div class="row dir" style="--d:0" data-kind="dir"><span class="ico">▾</span><span class="ico">📁</span><span class="name">docs</span></div>
+        <div class="row file" style="--d:1" data-kind="file" data-ext="pdf" onclick="openFile(this,'docs/spec.pdf','pdf')"><span class="ico">📄</span><span class="name">spec.pdf</span></div>
+        <div class="row file" style="--d:1" data-kind="file" data-ext="docx" onclick="openFile(this,'docs/manual.docx','docx')"><span class="ico">📄</span><span class="name">manual.docx</span></div>
+        <div class="row file" style="--d:1" data-kind="file" data-ext="png" onclick="openFile(this,'docs/screenshot.png','img')"><span class="ico">🖼</span><span class="name">screenshot.png</span></div>
+        <div class="row file" style="--d:1" data-kind="file" data-ext="mp4" onclick="openFile(this,'docs/demo.mp4','video')"><span class="ico">🎞</span><span class="name">demo.mp4</span></div>
+        <div class="row dir" style="--d:0" data-kind="dir"><span class="ico">▾</span><span class="ico">📁</span><span class="name">src</span></div>
+        <div class="row file" style="--d:1" data-kind="file" data-ext="rs" onclick="openFile(this,'src/main.rs','code')"><span class="ico">🦀</span><span class="name">main.rs</span></div>
+        <div class="row file" style="--d:0" data-kind="file" data-ext="md" onclick="openFile(this,'README.md','mdsrc')"><span class="ico">📝</span><span class="name">README.md</span></div>
+        <div style="height:120px" title="빈 공간: 우클릭 시 새 파일/새 폴더"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ④ Session UI -->
+  <div class="session">
+    <div class="head">
+      <span class="badge">4</span>
+      <span class="crumb">claude_viewer /</span>
+      <strong>GUI 초안 및 설계 문서 작성</strong>
+      <span class="state running" style="margin-left:4px" title="진행 중"></span>
+      <span style="flex:1"></span>
+      <span class="hint">session 7c2f…b1e4 · 시작 10:42</span>
+    </div>
+    <div class="chat">
+      <div class="msg user">requirement_v0.md 를 읽고 GUI 제안을 gui_draft/ 에 만들어줘.</div>
+      <div class="msg thinking">생각 중… (요구사항 문서 분석)</div>
+      <div class="msg tool">▶ Read  requirement/requirement_v0.md
+▶ Bash  mkdir -p gui_draft
+▶ Write gui_draft/gui_draft_v0.html  (412 lines)</div>
+      <div class="msg assistant">요구사항을 5개 영역(연결 UI / 프로젝트·세션 / 트리 / 세션 / 뷰어)으로 나눠 레이아웃을 잡았습니다. 오른쪽 File Viewer에 gui_draft_v0.html 을 미리보기로 띄웠습니다.</div>
+      <div class="msg thinking">응답 생성 중 ▍</div>
+    </div>
+    <div class="compose">
+      <div class="ctx">
+        <span>선택 파일</span><span class="chip" id="ctxFile">requirement/requirement_v0.md</span>
+        <span>모델</span>
+        <select>
+          <option>claude-fable-5-1</option>
+          <option selected>claude-opus-5-5</option>
+          <option>claude-sonnet-5-5</option>
+          <option>claude-haiku-5-5</option>
+        </select>
+      </div>
+      <textarea placeholder="메시지를 입력하세요… (Ctrl+Enter 로 Commit)"></textarea>
+      <div class="actions">
+        <span class="hint">선택한 파일은 프롬프트에 @경로 로 자동 첨부됩니다</span>
+        <span class="spacer"></span>
+        <button class="danger" title="진행 중인 응답을 interrupt 하여 취소">■ Abort</button>
+        <button class="primary">Commit ⏎</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ⑤ File Viewer -->
+  <div class="viewer">
+    <div class="tabs" id="tabs">
+      <div class="tab active" data-v="mdsrc" onclick="showView('mdsrc')">requirement_v0.md</div>
+      <div class="tab" data-v="md" onclick="showView('md')">requirement_v0.md · 미리보기</div>
+      <div class="tab" data-v="html" onclick="showView('html')">gui_draft_v0.html</div>
+      <div class="tab" data-v="code" onclick="showView('code')">main.rs</div>
+      <div class="tab" data-v="pdf" onclick="showView('pdf')">spec.pdf</div>
+      <div class="tab" data-v="docx" onclick="showView('docx')">manual.docx</div>
+      <div class="tab" data-v="img" onclick="showView('img')">screenshot.png</div>
+      <div class="tab" data-v="video" onclick="showView('video')">demo.mp4</div>
+    </div>
+    <div class="vhead">
+      <span class="badge">5</span>
+      <span id="vpath">requirement/requirement_v0.md</span>
+      <span class="spacer"></span>
+      <span id="vmode"></span>
+      <span class="hint" style="margin-left:8px">읽기 전용</span>
+    </div>
+
+    <div class="vbody md hidden" data-v="md" id="mdRender">
+      <h1>클로드 뷰어</h1>
+      <h2>목표</h2>
+      <p>여러 프로젝트에서 사용하는 Claude Session의 진행 상황과 결과를 한눈에 확인하는 단일 binary 세션 만들기</p>
+      <h2>요구사항</h2>
+      <ul><li>GUI는 아래의 요구사항을 만족시킨다.</li></ul>
+      <h3>Claude 연결 UI</h3>
+      <ul><li>맨 위쪽에 Claude 연결 UI가 있다.<ul><li><code>[경로] [자동 찾기] [수동 찾기]</code> UI로 제공한다.</li></ul></li></ul>
+      <h3>Project &amp; Session UI</h3>
+      <ul><li>맨 왼쪽에 Project에 대한 UI가 있다.</li></ul>
+    </div>
+    <div class="vbody" data-v="mdsrc">
+<pre class="code"><span class="l"><span class="kw"># 클로드 뷰어</span></span><span class="l"></span><span class="l"><span class="kw">## 목표</span></span><span class="l"></span><span class="l">여러 프로젝트에서 사용하는 Claude Session의 진행 상황과 결과를</span><span class="l">한눈에 확인하는 단일 binary 세션 만들기</span><span class="l"></span><span class="l"><span class="kw">## 요구사항</span></span><span class="l"></span><span class="l">- GUI는 아래의 요구사항을 만족시킨다.</span><span class="l"></span><span class="l"><span class="kw">### Claude 연결 UI</span></span><span class="l"></span><span class="l">- 맨 위쪽에 Claude 연결 UI가 있다.</span><span class="l">  - <span class="str">`[경로] [자동 찾기] [수동 찾기]`</span> UI로 제공한다.</span></pre>
+    </div>
+    <div class="vbody hidden" data-v="html">
+<pre class="code"><span class="l"><span class="cm">&lt;!doctype html&gt;</span></span><span class="l"><span class="kw">&lt;html</span> <span class="ty">lang</span>=<span class="str">"ko"</span><span class="kw">&gt;</span></span><span class="l"><span class="kw">&lt;head&gt;</span></span><span class="l">  <span class="kw">&lt;meta</span> <span class="ty">charset</span>=<span class="str">"utf-8"</span><span class="kw">&gt;</span></span><span class="l">  <span class="kw">&lt;title&gt;</span>Claude Viewer GUI Draft v0<span class="kw">&lt;/title&gt;</span></span><span class="l"><span class="kw">&lt;/head&gt;</span></span><span class="l"><span class="kw">&lt;body&gt;</span></span><span class="l">  <span class="kw">&lt;div</span> <span class="ty">class</span>=<span class="str">"app"</span><span class="kw">&gt;</span></span><span class="l">    <span class="cm">&lt;!-- ① Claude 연결 UI --&gt;</span></span><span class="l">    <span class="kw">&lt;div</span> <span class="ty">class</span>=<span class="str">"top"</span><span class="kw">&gt;</span>…<span class="kw">&lt;/div&gt;</span></span><span class="l">  <span class="kw">&lt;/div&gt;</span></span><span class="l"><span class="kw">&lt;/body&gt;</span></span><span class="l"><span class="kw">&lt;/html&gt;</span></span></pre>
+    </div>
+    <div class="vbody hidden" data-v="code">
+<pre class="code"><span class="l"><span class="cm">// Claude CLI 프로세스를 띄우고 stream-json 을 읽는다</span></span><span class="l"><span class="kw">use</span> tokio::process::Command;</span><span class="l"></span><span class="l"><span class="kw">pub async fn</span> <span class="fn">spawn_session</span>(bin: &amp;<span class="ty">Path</span>, cwd: &amp;<span class="ty">Path</span>, model: &amp;<span class="ty">str</span>) -&gt; <span class="ty">Result</span>&lt;<span class="ty">Child</span>&gt; {</span><span class="l">    <span class="kw">let</span> child = Command::new(bin)</span><span class="l">        .current_dir(cwd)</span><span class="l">        .args([<span class="str">"-p"</span>, <span class="str">"--output-format"</span>, <span class="str">"stream-json"</span>,</span><span class="l">               <span class="str">"--input-format"</span>, <span class="str">"stream-json"</span>, <span class="str">"--model"</span>, model])</span><span class="l">        .stdin(Stdio::piped()).stdout(Stdio::piped())</span><span class="l">        .spawn()?;</span><span class="l">    Ok(child)</span><span class="l">}</span></pre>
+    </div>
+    <div class="vbody hidden pdf" data-v="pdf">
+      <div class="page"><b>SPEC.PDF — 1 / 12</b><br><br>pdf.js 로 각 페이지를 canvas 에 렌더링. 확대/축소, 페이지 이동 툴바 제공.</div>
+      <div class="page"><b>2 / 12</b></div>
+    </div>
+    <div class="vbody hidden" data-v="docx" style="background:#fff;color:#222">
+      <div style="max-width:620px;margin:0 auto;padding:24px;font-family:'Times New Roman',serif">
+        <h2 style="text-align:center">Manual.docx</h2>
+        <p>docx-preview 로 문단·표·이미지를 HTML 로 변환하여 표시합니다. 편집 불가.</p>
+        <table border="1" cellpadding="4" style="border-collapse:collapse"><tr><th>항목</th><th>값</th></tr><tr><td>버전</td><td>v0</td></tr></table>
+      </div>
+    </div>
+    <div class="vbody hidden media" data-v="img"><div class="frame">🖼<span class="hint">screenshot.png · 1920×1080 · 맞춤/원본 크기 토글</span></div></div>
+    <div class="vbody hidden media" data-v="video"><div class="frame">▶<span class="hint">demo.mp4 · &lt;video controls&gt; 네이티브 재생</span></div></div>
+  </div>
+
+  <div class="status">
+    <span>● Claude 연결됨</span><span>활성 세션 3 (진행 2 / 완료 1)</span><span>감시 중: ~/.claude/projects/d--repo-claude-viewer</span>
+  </div>
+</div>
+
+<!-- 컨텍스트 메뉴들 -->
+<div class="ctxmenu" id="cm-project">
+  <div class="it" onclick="openDialog()">새 활성화 세션…</div>
+  <hr>
+  <div class="it dangerous">Project 닫기</div>
+</div>
+<div class="ctxmenu" id="cm-session">
+  <div class="it">Session 열기</div>
+  <hr>
+  <div class="it dangerous">Session 닫기</div>
+</div>
+<div class="ctxmenu" id="cm-dir">
+  <div class="it">새 파일 생성</div>
+  <div class="it">아래에 새 Directory 생성</div>
+  <hr>
+  <div class="it">이름 바꾸기 <span class="k">F2</span></div>
+  <div class="it">이동… <span class="k">드래그 가능</span></div>
+  <div class="it">클립보드에 복사</div>
+  <hr>
+  <div class="it">탐색기로 열기</div>
+  <div class="it">절대 경로 복사</div>
+  <div class="it">상대 경로 복사</div>
+  <hr>
+  <div class="it dangerous">Directory 삭제 <span class="k">Del</span></div>
+</div>
+<div class="ctxmenu" id="cm-file">
+  <div class="it" id="cm-file-md" onclick="openRendered('md')">Markdown 미리보기로 열기</div>
+  <div class="it" id="cm-file-html" onclick="openRendered('html')">Browser로 열기</div>
+  <hr id="cm-file-sep">
+  <div class="it">이름 바꾸기 <span class="k">F2</span></div>
+  <div class="it">이동… <span class="k">드래그 가능</span></div>
+  <div class="it">복사</div>
+  <hr>
+  <div class="it">탐색기로 열기</div>
+  <div class="it">절대 경로 복사</div>
+  <div class="it">상대 경로 복사</div>
+  <hr>
+  <div class="it dangerous">File 삭제 <span class="k">Del</span></div>
+</div>
+<div class="ctxmenu" id="cm-empty">
+  <div class="it">새 파일 생성</div>
+  <div class="it">새 폴더 생성</div>
+</div>
+
+<!-- 새 활성화 세션 다이얼로그 -->
+<div class="overlay" id="dlg" onclick="if(event.target===this)closeDialog()">
+  <div class="dialog">
+    <h2>새 활성화 세션 — claude_viewer</h2>
+    <div class="dbody">
+      <div class="hint" style="margin-bottom:6px">~/.claude/projects/d--repo-claude-viewer 에서 찾은 기존 세션</div>
+      <div class="row selected"><span class="ico claude"><svg><use href="#i-claude"/></svg></span><span class="name">요구사항 정리<br><small>58a7a44b · 2026-10-14 · 메시지 32</small></span><span class="state done"></span></div>
+      <div class="row"><span class="ico claude"><svg><use href="#i-claude"/></svg></span><span class="name">빌드 스킬 작성<br><small>a1c0e9f2 · 2026-10-20 · 메시지 11</small></span><span class="state done"></span></div>
+      <div class="row"><span class="ico claude"><svg><use href="#i-claude"/></svg></span><span class="name">README 초안<br><small>f7b3d101 · 2026-10-28 · 메시지 5</small></span><span class="state done"></span></div>
+    </div>
+    <div class="dfoot">
+      <button onclick="closeDialog()">취소</button>
+      <span style="flex:1"></span>
+      <button onclick="newSession()">＋ 새 세션 생성</button>
+      <button class="primary" onclick="closeDialog()">선택한 세션 재개</button>
+    </div>
+  </div>
+</div>
+
+<!-- 설명 -->
+<div class="note" id="note">
+  <span class="close" onclick="document.getElementById('note').remove()">✕</span>
+  <h4>GUI Draft v0 — 영역 설명 (항목을 우클릭해 보세요)</h4>
+  <ol>
+    <li><b>Claude 연결</b>: 경로 / 자동 찾기(VSCode 확장 → 일반 설치 경로 순) / 수동 찾기</li>
+    <li><b>Projects &amp; Sessions</b> (좌측 상단 20%): <span class="ico project-btn" style="display:inline-flex;vertical-align:middle"><svg><use href="#i-project"/></svg></span> 프로젝트 아이콘(클릭 시 File Picker) + 폴더명 + <span class="tag red">0/1</span> <span class="tag yellow">1/3</span> <span class="tag green">2/2</span> 태그. 세션은 한 줄에 <span class="ico claude" style="display:inline-flex;vertical-align:middle"><svg><use href="#i-claude"/></svg></span> 아이콘 · 이름 · 진행 중 <span class="state running" style="display:inline-block"></span> / 완료 <span class="state done" style="display:inline-block"></span></li>
+    <li><b>Project Tree</b>: 프로젝트/세션 선택 시 표시. 디렉터리·파일·빈 공간 우클릭 메뉴, 드래그 이동</li>
+    <li><b>Session</b>: 대화, 선택 파일 칩, 모델 드롭다운, 입력창, Commit / Abort</li>
+    <li><b>File Viewer</b>: 읽기 전용. <b>.md / .html 은 클릭 → 구문 강조 소스</b>, <b>우클릭 → "미리보기로 열기"(md 렌더링 탭) / "Browser로 열기"(html)</b>. 코드 하이라이트, pdf, docx, 이미지, mp4. AI가 API로 특정 파일을 열 수 있음</li>
+  </ol>
+</div>
+
+<script>
+  // ---- 컨텍스트 메뉴 ----
+  const menus = document.querySelectorAll('.ctxmenu');
+  function hideMenus(){ menus.forEach(m => m.style.display = 'none'); }
+  document.addEventListener('click', hideMenus);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') { hideMenus(); closeDialog(); } });
+  let ctxTarget = null; // 우클릭한 트리 항목
+  document.addEventListener('contextmenu', e => {
+    const el = e.target.closest('[data-kind]');
+    if (!el) return;
+    e.preventDefault(); hideMenus();
+    ctxTarget = el;
+    const kind = el.dataset.kind;
+    if (kind === 'file') {
+      const ext = el.dataset.ext;
+      document.getElementById('cm-file-md').style.display = ext === 'md' ? '' : 'none';
+      document.getElementById('cm-file-html').style.display = ext === 'html' ? '' : 'none';
+      document.getElementById('cm-file-sep').style.display = (ext === 'md' || ext === 'html') ? '' : 'none';
+    }
+    const m = document.getElementById('cm-' + kind);
+    m.style.display = 'block';
+    const x = Math.min(e.clientX, innerWidth - m.offsetWidth - 8);
+    const y = Math.min(e.clientY, innerHeight - m.offsetHeight - 8);
+    m.style.left = x + 'px'; m.style.top = y + 'px';
+  });
+
+  // ---- 다이얼로그 ----
+  function openDialog(){ hideMenus(); document.getElementById('dlg').classList.add('show'); }
+  function closeDialog(){ document.getElementById('dlg').classList.remove('show'); }
+  function newSession(){
+    closeDialog();
+    alert("목록에 'New Session...' 이 추가됩니다.\n첫 대화를 보내면 VSCode 확장처럼 자동 생성된 세션 이름으로 바뀝니다.");
+  }
+
+  // ---- 프로젝트 / 세션 선택 → 트리 제목 변경 ----
+  function selectProject(el, name){
+    document.querySelectorAll('#projectList .row').forEach(r => r.classList.remove('selected'));
+    el.classList.add('selected');
+    document.getElementById('treeTitle').textContent = name;
+  }
+  document.querySelectorAll('.row.session').forEach(r => r.addEventListener('click', () => {
+    document.querySelectorAll('#projectList .row').forEach(x => x.classList.remove('selected'));
+    r.classList.add('selected');
+  }));
+
+  // ---- 파일 뷰어 ----
+  // 왼쪽 클릭: 항상 "소스" (md/html 은 구문 강조된 텍스트)
+  // 우클릭 메뉴: md → 뷰어에서 렌더링 탭, html → 기본 브라우저
+  function openFile(el, path, view){
+    document.querySelectorAll('#tree .row').forEach(r => r.classList.remove('selected'));
+    el.classList.add('selected');
+    document.getElementById('vpath').textContent = path;
+    document.getElementById('ctxFile').textContent = path;
+    showView(view);
+  }
+  function openRendered(ext){
+    hideMenus();
+    const path = ctxTarget ? ctxTarget.querySelector('.name').textContent : '';
+    if (ext === 'md') {
+      document.getElementById('vpath').textContent = path + '  (미리보기)';
+      showView('md');
+    } else {
+      alert(path + ' 을(를) 기본 브라우저에서 렌더링하여 엽니다.');
+    }
+  }
+  function showView(v){
+    document.querySelectorAll('.viewer .tab').forEach(t => t.classList.toggle('active', t.dataset.v === v));
+    document.querySelectorAll('.vbody').forEach(b => b.classList.toggle('hidden', b.dataset.v !== v));
+    document.getElementById('vmode').textContent =
+      ({ mdsrc: 'Markdown 소스 · Syntax highlight', md: 'Markdown 렌더링', html: 'HTML 소스 · Syntax highlight',
+         code: 'Syntax highlight', pdf: 'PDF 렌더링', docx: 'DOCX 렌더링', img: '이미지', video: '동영상' })[v] || '';
+  }
+
+  // ---- 자동 찾기 (목업) ----
+  function autoFind(){
+    alert('자동 찾기 순서:\n\n' +
+      '1순위  ~/.vscode/extensions/anthropic.claude-code-*/resources/native-binary/claude(.exe)\n' +
+      '2순위  ~/.local/bin/claude(.exe)\n' +
+      '3순위  %APPDATA%\\npm\\claude.cmd  /  /opt/homebrew/bin/claude  /  /usr/local/bin/claude\n' +
+      '4순위  PATH 에서 claude 검색');
+  }
+
+  // ---- 드래그 이동 (목업) ----
+  document.querySelectorAll('#tree .row').forEach(r => {
+    r.draggable = true;
+    r.addEventListener('dragstart', () => r.classList.add('dragging'));
+    r.addEventListener('dragend', () => { r.classList.remove('dragging'); document.querySelectorAll('.drop').forEach(d => d.classList.remove('drop')); });
+    r.addEventListener('dragover', e => { if (r.classList.contains('dir')) { e.preventDefault(); r.classList.add('drop'); } });
+    r.addEventListener('dragleave', () => r.classList.remove('drop'));
+  });
+  showView('mdsrc');
+</script>
+</body>
+</html>
