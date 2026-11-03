@@ -2,13 +2,19 @@ use tauri::http;
 use tauri::ipc::Response;
 use tauri::{AppHandle, Manager, State};
 
-use crate::domain::entity::{AppError, TextContent, ViewerMode};
+use crate::domain::entity::{AppError, LinkTarget, TextContent, ViewerMode};
 use crate::domain::usecase::viewer;
 use crate::presentation::state::AppState;
 
 #[tauri::command(async)]
 pub fn viewer_resolve_mode(path: String) -> ViewerMode {
     viewer::resolve_viewer_mode(&path)
+}
+
+/// 대화·마크다운 속 링크. `base_dir` 은 상대 경로의 기준 폴더 (세션이면 프로젝트 루트).
+#[tauri::command(async)]
+pub fn viewer_resolve_link(state: State<'_, AppState>, base_dir: String, href: String) -> Result<LinkTarget, AppError> {
+    viewer::resolve_link(&*state.fs, &*state.settings, &base_dir, &href)
 }
 
 #[tauri::command(async)]
@@ -50,32 +56,9 @@ pub fn serve_html(app: &AppHandle, request: http::Request<Vec<u8>>) -> http::Res
 
 /// `/C:/a/b.html` → `C:/a/b.html`, `/Users/a/b.html` 은 그대로.
 fn file_path_of(url_path: &str) -> String {
-    let decoded = percent_decode(url_path);
+    let decoded = viewer::percent_decode(url_path);
     let is_windows_drive = decoded.as_bytes().get(2) == Some(&b':') && decoded.starts_with('/');
     if is_windows_drive { decoded[1..].to_string() } else { decoded }
-}
-
-fn percent_decode(text: &str) -> String {
-    let bytes = text.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        let decoded = (bytes[i] == b'%' && i + 3 <= bytes.len())
-            .then(|| std::str::from_utf8(&bytes[i + 1..i + 3]).ok())
-            .flatten()
-            .and_then(|hex| u8::from_str_radix(hex, 16).ok());
-        match decoded {
-            Some(byte) => {
-                out.push(byte);
-                i += 3;
-            }
-            None => {
-                out.push(bytes[i]);
-                i += 1;
-            }
-        }
-    }
-    String::from_utf8_lossy(&out).into_owned()
 }
 
 fn mime_of(path: &str) -> &'static str {
@@ -111,7 +94,6 @@ mod tests {
     fn url_paths_map_to_file_paths() {
         assert_eq!(file_path_of("/C:/Users/me/docs/a%20b.html"), "C:/Users/me/docs/a b.html");
         assert_eq!(file_path_of("/Users/me/%ED%95%9C%EA%B8%80.html"), "/Users/me/한글.html");
-        assert_eq!(percent_decode("abc%"), "abc%");
         assert_eq!(mime_of("x/style.CSS"), "text/css; charset=utf-8");
     }
 }

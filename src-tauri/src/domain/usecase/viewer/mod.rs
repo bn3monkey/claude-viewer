@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use super::project::ensure_within_project;
-use crate::domain::entity::{AppError, TextContent, ViewerMode, ViewerRequest};
+use crate::domain::entity::{AppError, LinkTarget, TextContent, ViewerMode, ViewerRequest};
 use crate::domain::repository::{FileSystemRepository, SettingsRepository, ShellRepository};
 
 /// `--append-system-prompt` 로 전달해 AI 가 File Viewer 지시문을 알게 한다.
@@ -90,6 +90,85 @@ pub fn resolve_directive(
     Ok(ViewerRequest { path, mode })
 }
 
+/// 마크다운 링크나 코드 속 경로를 뷰어 탭으로 푼다. 상대 경로는 `base_dir` 기준.
+/// `file://`, 퍼센트 인코딩, `#L42` / `#L42-L50`, 끝의 `:42` / `:42:7` 을 받는다.
+pub fn resolve_link(
+    fs: &dyn FileSystemRepository,
+    settings: &dyn SettingsRepository,
+    base_dir: &str,
+    href: &str,
+) -> Result<LinkTarget, AppError> {
+    let decoded = percent_decode(href.trim());
+    let without_scheme = decoded.strip_prefix("file://").unwrap_or(&decoded);
+    // file:///C:/a → /C:/a → C:/a
+    let without_scheme = match without_scheme.as_bytes() {
+        [b'/', drive, b':', ..] if drive.is_ascii_alphabetic() => &without_scheme[1..],
+        _ => without_scheme,
+    };
+    let (target, fragment) = without_scheme.split_once('#').unwrap_or((without_scheme, ""));
+    let (target, suffix_line) = split_line_suffix(target);
+    let line = fragment_line(fragment).or(suffix_line);
+    if target.is_empty() {
+        return Err(AppError::InvalidPath(format!("파일 경로가 아닙니다: {href}")));
+    }
+
+    let path = Path::new(base_dir).join(target);
+    if !fs.exists(&path) {
+        return Err(AppError::NotFound(format!("파일을 찾을 수 없습니다: {target}")));
+    }
+    let path = path.to_string_lossy().into_owned();
+    ensure_within_project(fs, settings, &path)?;
+    if fs.is_dir(&path) {
+        return Err(AppError::InvalidPath(format!("폴더는 뷰어로 열 수 없습니다: {target}")));
+    }
+    let mode = resolve_viewer_mode(&path);
+    Ok(LinkTarget { request: ViewerRequest { path, mode }, line: line.filter(|_| mode == ViewerMode::Source) })
+}
+
+/// `L42`, `L42-L50`, `L42C3` → 42
+fn fragment_line(fragment: &str) -> Option<u32> {
+    let digits: String = fragment.strip_prefix('L')?.chars().take_while(char::is_ascii_digit).collect();
+    digits.parse().ok().filter(|n| *n > 0)
+}
+
+/// 마지막 경로 조각 끝의 `:42`, `:42:7`, `:42-50` 을 뗀다. 드라이브 문자 `C:` 는 건드리지 않는다.
+fn split_line_suffix(target: &str) -> (&str, Option<u32>) {
+    let name_start = target.rfind(['/', '\\']).map_or(0, |i| i + 1);
+    let Some(colon) = target[name_start..].find(':').map(|i| name_start + i) else {
+        return (target, None);
+    };
+    let suffix = &target[colon + 1..];
+    let is_line = !suffix.is_empty() && suffix.chars().all(|c| c.is_ascii_digit() || c == ':' || c == '-');
+    let line = suffix.split([':', '-']).next().and_then(|n| n.parse().ok()).filter(|n| *n > 0);
+    match (is_line, line) {
+        (true, Some(line)) => (&target[..colon], Some(line)),
+        _ => (target, None),
+    }
+}
+
+pub fn percent_decode(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        let decoded = (bytes[i] == b'%' && i + 3 <= bytes.len())
+            .then(|| std::str::from_utf8(&bytes[i + 1..i + 3]).ok())
+            .flatten()
+            .and_then(|hex| u8::from_str_radix(hex, 16).ok());
+        match decoded {
+            Some(byte) => {
+                out.push(byte);
+                i += 3;
+            }
+            None => {
+                out.push(bytes[i]);
+                i += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 pub fn read_text(
     fs: &dyn FileSystemRepository,
     settings: &dyn SettingsRepository,
@@ -176,6 +255,54 @@ mod tests {
         ));
         let inside = ViewerDirective { path: "a.pdf".into(), mode: None };
         assert_eq!(resolve_directive(&fs, &settings, "/p", &inside).unwrap().mode, ViewerMode::Pdf);
+    }
+
+    fn link_world() -> (FakeFs, FakeSettings) {
+        let fs = FakeFs::with_dirs(&["/p", "/p/src", "/secret"]);
+        for file in ["/p/src/a.rs", "/p/my docs/b.md", "/p/c.pdf", "/secret/key.pem"] {
+            fs.add_file(file);
+        }
+        (fs, FakeSettings::with_project("/p", &[]))
+    }
+
+    fn link(href: &str) -> Result<(String, ViewerMode, Option<u32>), AppError> {
+        let (fs, settings) = link_world();
+        resolve_link(&fs, &settings, "/p", href).map(|t| {
+            (t.request.path.replace('\\', "/"), t.request.mode, t.line)
+        })
+    }
+
+    #[test]
+    fn links_resolve_relative_to_the_base_with_line_marks() {
+        assert_eq!(link("src/a.rs").unwrap(), ("/p/src/a.rs".into(), ViewerMode::Source, None));
+        assert_eq!(link("src/a.rs#L42").unwrap().2, Some(42));
+        assert_eq!(link("src/a.rs#L42-L50").unwrap().2, Some(42));
+        assert_eq!(link("src/a.rs:42").unwrap().2, Some(42));
+        assert_eq!(link("src/a.rs:42:7").unwrap().2, Some(42));
+        assert_eq!(link("./src/a.rs:10-12").unwrap().2, Some(10));
+        assert_eq!(link("my%20docs/b.md").unwrap().0, "/p/my docs/b.md");
+        assert_eq!(link("/p/src/a.rs").unwrap().0, "/p/src/a.rs");
+        assert_eq!(link("file:///p/src/a.rs#L3").unwrap().2, Some(3));
+        // 줄 번호는 소스 탭에만 의미가 있다.
+        assert_eq!(link("c.pdf:3").unwrap(), ("/p/c.pdf".into(), ViewerMode::Pdf, None));
+    }
+
+    #[test]
+    fn links_that_are_missing_folders_or_outside_fail() {
+        assert!(matches!(link("nope.rs"), Err(AppError::NotFound(_))));
+        assert!(matches!(link("src"), Err(AppError::InvalidPath(_))));
+        assert!(matches!(link("/secret/key.pem"), Err(AppError::OutsideProject(_))));
+        assert!(link("../secret/key.pem").is_err());
+        assert!(matches!(link("#L3"), Err(AppError::InvalidPath(_))));
+    }
+
+    #[test]
+    fn line_suffix_leaves_drive_letters_alone() {
+        assert_eq!(split_line_suffix("C:/a/b.rs"), ("C:/a/b.rs", None));
+        assert_eq!(split_line_suffix("C:\\a\\b.rs:9"), ("C:\\a\\b.rs", Some(9)));
+        assert_eq!(split_line_suffix("a.rs:x"), ("a.rs:x", None));
+        assert_eq!(split_line_suffix("a.rs:0"), ("a.rs:0", None));
+        assert_eq!(percent_decode("abc%"), "abc%");
     }
 
     #[test]

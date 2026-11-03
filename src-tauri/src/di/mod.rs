@@ -70,6 +70,7 @@ pub fn run() {
             tree_vm::tree_reveal,
             tree_vm::tree_run,
             viewer_vm::viewer_resolve_mode,
+            viewer_vm::viewer_resolve_link,
             viewer_vm::viewer_read_text,
             viewer_vm::viewer_read_bytes,
             viewer_vm::viewer_open_external,

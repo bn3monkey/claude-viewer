@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import { X } from "lucide-react";
 import type { ViewerMode } from "../../generated/entity/ViewerMode";
 import { useViewerVM, type ViewerTab } from "../../viewmodel/useViewerVM";
 import { DiffView } from "./DiffView";
+import { FindBar } from "./FindBar";
 import { DocxView, HtmlView, ImageView, VideoView } from "./MediaViews";
 import { PdfView } from "./PdfView";
 import { TerminalView } from "./TerminalView";
@@ -21,6 +22,9 @@ const MODE_LABEL: Record<ViewerMode, string> = {
   terminal: "터미널",
 };
 
+/** 본문 텍스트가 DOM 에 있어 찾기가 되는 모드. PDF 는 canvas, HTML 은 iframe 이라 빠진다. */
+const FINDABLE: ViewerMode[] = ["source", "markdown", "diff", "docx"];
+
 const TAB_SUFFIX: Partial<Record<ViewerMode, string>> = { markdown: " · 미리보기", html: " · 렌더링", diff: " · diff" };
 
 /** ⑤ File Viewer (읽기 전용) */
@@ -29,9 +33,36 @@ export function ViewerPanel() {
   const active = tabs.find((t) => t.key === activeKey) ?? null;
   const [fitImage, setFitImage] = useState(true);
   const [menuTab, setMenuTab] = useState<string | null>(null);
+  const root = useRef<HTMLDivElement>(null);
+  const [body, setBody] = useState<HTMLDivElement | null>(null);
+  const [findOpen, setFindOpen] = useState(false);
+  const [findFocus, setFindFocus] = useState(0);
+
+  // Ctrl+F 는 마지막으로 클릭한 곳이 이 패널일 때만 가로챈다. 터미널 탭은 셸에 넘긴다.
+  const activeMode = active?.mode;
+  useEffect(() => {
+    let inside = false;
+    const onPointer = (e: PointerEvent) => {
+      inside = !!root.current?.contains(e.target as Node);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.code !== "KeyF") return;
+      if (!activeMode || activeMode === "terminal") return;
+      if (!inside && !root.current?.contains(document.activeElement)) return;
+      e.preventDefault();
+      setFindOpen(true);
+      setFindFocus((n) => n + 1);
+    };
+    document.addEventListener("pointerdown", onPointer, true);
+    document.addEventListener("keydown", onKey, true);
+    return () => {
+      document.removeEventListener("pointerdown", onPointer, true);
+      document.removeEventListener("keydown", onKey, true);
+    };
+  }, [activeMode]);
 
   return (
-    <div className="viewer">
+    <div className="viewer" ref={root}>
       <ContextMenu.Root onOpenChange={(open) => !open && setMenuTab(null)}>
         <ContextMenu.Trigger asChild disabled={tabs.length === 0}>
           <div className="tabs">
@@ -93,8 +124,16 @@ export function ViewerPanel() {
               {active.mode !== "terminal" && <span className="hint" style={{ marginLeft: 8 }}>읽기 전용</span>}
             </div>
           )}
+          {findOpen && active.mode !== "terminal" && (
+            <FindBar
+              container={body}
+              supported={FINDABLE.includes(active.mode)}
+              focusNonce={findFocus}
+              onClose={() => setFindOpen(false)}
+            />
+          )}
           {active.mode !== "terminal" && (
-            <div className={`vbody ${active.mode === "html" ? "frame" : ""}`} key={active.key}>
+            <div className={`vbody ${active.mode === "html" ? "frame" : ""}`} key={active.key} ref={setBody}>
               <Body tab={active} fitImage={fitImage} />
             </div>
           )}
@@ -118,7 +157,7 @@ export function ViewerPanel() {
 function Body({ tab, fitImage }: { tab: ViewerTab; fitImage: boolean }) {
   switch (tab.mode) {
     case "source":
-      return <SourceView path={tab.path} />;
+      return <SourceView path={tab.path} line={tab.line} reveal={tab.reveal} />;
     case "markdown":
       return <MarkdownView path={tab.path} />;
     case "html":

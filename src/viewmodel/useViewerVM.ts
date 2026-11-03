@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { listen } from "@tauri-apps/api/event";
+import type { LinkTarget } from "../generated/entity/LinkTarget";
 import type { TerminalSession } from "../generated/entity/TerminalSession";
 import type { ViewerMode } from "../generated/entity/ViewerMode";
 import type { ViewerRequest } from "../generated/entity/ViewerRequest";
@@ -14,9 +15,12 @@ export type ViewerTab = ViewerRequest & {
   name: string;
   diff?: DiffContext;
   terminal?: TerminalSession;
+  /** 링크로 연 줄 (1부터). reveal 이 바뀔 때마다 그 줄로 다시 스크롤한다. */
+  line?: number;
+  reveal?: number;
 };
 
-type Extra = { diff?: DiffContext; terminal?: TerminalSession };
+type Extra = { diff?: DiffContext; terminal?: TerminalSession; line?: number };
 
 type ViewerVM = {
   tabs: ViewerTab[];
@@ -24,6 +28,8 @@ type ViewerVM = {
   /** 왼쪽 클릭: 확장자에 맞는 기본 모드(.md/.html 은 소스)로 연다. */
   openDefault: (path: string) => Promise<void>;
   open: (request: ViewerRequest, extra?: Extra) => void;
+  /** 대화·마크다운의 링크를 연다. 상대 경로는 baseDir 기준. */
+  openLink: (baseDir: string, href: string) => Promise<void>;
   activate: (key: string) => void;
   close: (key: string) => void;
   closeOthers: (key: string) => void;
@@ -57,11 +63,19 @@ export const useViewerVM = create<ViewerVM>((set, get) => ({
   open: (request, extra) => {
     const key = tabKey(request, extra);
     const { tabs } = get();
+    const reveal = extra?.line ? { line: extra.line, reveal: Date.now() } : {};
     if (!tabs.some((t) => t.key === key)) {
       const name = extra?.terminal ? `${baseName(request.path)} · ${TERMINAL_LABEL[extra.terminal.kind]}` : baseName(request.path);
-      set({ tabs: [...tabs, { ...request, key, name, ...extra }] });
+      set({ tabs: [...tabs, { ...request, key, name, ...extra, ...reveal }] });
+    } else if (extra?.line) {
+      set({ tabs: tabs.map((t) => (t.key === key ? { ...t, ...reveal } : t)) });
     }
     set({ activeKey: key });
+  },
+
+  openLink: async (baseDir, href) => {
+    const target = await call<LinkTarget>("viewer_resolve_link", { baseDir, href });
+    if (target) get().open(target.request, { line: target.line ?? undefined });
   },
 
   activate: (activeKey) => set({ activeKey }),

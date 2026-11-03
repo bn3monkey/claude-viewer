@@ -105,6 +105,16 @@ input:focus, textarea:focus { border-color: var(--accent); }
 .viewer .vhead .spacer { flex: 1 1 0; }
 .viewer .tabs { scrollbar-width: thin; }
 .viewer .vbody { flex: 1; overflow: auto; min-height: 0; }
+.viewer .findbar { display: flex; gap: 4px; align-items: center; padding: 4px 10px; border-bottom: 1px solid var(--line); background: var(--bg3); flex: none; }
+.viewer .findbar input { flex: 0 1 280px; min-width: 120px; padding: 2px 8px; }
+.viewer .findbar .count { font: 11px var(--mono); color: var(--fg2); min-width: 72px; padding: 0 4px; }
+.viewer .findbar .count.none { color: var(--red); }
+.viewer .findbar button.on { border-color: var(--accent); color: var(--accent); }
+::highlight(viewer-find) { background-color: rgba(229, 192, 123, .35); }
+::highlight(viewer-find-current) { background-color: #e5c07b; color: #111; }
+.code .line.target { display: inline-block; min-width: 100%; background: rgba(78, 140, 255, .18); }
+.file-link { color: var(--accent); cursor: pointer; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 2px; }
+.file-link:hover { text-decoration-style: solid; }
 .viewer .vbody.padded { padding: 12px 14px; }
 .code pre.shiki, pre.plain { margin: 0; padding: 8px 0; font: 12px/1.5 var(--mono); background: transparent !important; counter-reset: ln; }
 /* 줄 사이에 이미 개행 문자가 있으므로 block 으로 만들면 줄 간격이 두 배가 된다 */

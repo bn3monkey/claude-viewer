@@ -8,6 +8,7 @@ import { useConnectionVM } from "../../viewmodel/useConnectionVM";
 import { findSession, useProjectVM } from "../../viewmodel/useProjectVM";
 import { summarizeUsage, useSessionVM } from "../../viewmodel/useSessionVM";
 import { useTreeVM } from "../../viewmodel/useTreeVM";
+import { LinkBase } from "../viewer/Markdown";
 import { ChatItem } from "./ChatItem";
 import { UsageBar } from "./UsageBar";
 
@@ -100,7 +101,9 @@ export function SessionPanel() {
       />
       <PanelGroup direction="vertical" autoSaveId="layout-session">
         <Panel defaultSize={75} minSize={20}>
-          <ChatList events={events} busy={session.busy} sessionId={session.id} />
+          <LinkBase.Provider value={project.root}>
+            <ChatList events={events} busy={session.busy} sessionId={session.id} />
+          </LinkBase.Provider>
         </Panel>
         <PanelResizeHandle className="resize-v" />
         <Panel defaultSize={25} minSize={12}>

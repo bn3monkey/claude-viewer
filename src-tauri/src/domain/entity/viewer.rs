@@ -38,3 +38,12 @@ pub struct TextContent {
     /// NUL 바이트가 있어 텍스트로 보여줄 수 없으면 true.
     pub binary: bool,
 }
+
+/// 대화·문서 속 링크가 가리키는 파일. `line` 은 `#L42`, `:42` 같은 줄 표시 (1부터).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct LinkTarget {
+    pub request: ViewerRequest,
+    pub line: Option<u32>,
+}
