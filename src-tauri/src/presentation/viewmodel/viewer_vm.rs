@@ -2,7 +2,7 @@ use tauri::http;
 use tauri::ipc::Response;
 use tauri::{AppHandle, Manager, State};
 
-use crate::domain::entity::{AppError, LinkTarget, TextContent, ViewerMode};
+use crate::domain::entity::{AppError, LinkTarget, SavedTab, TextContent, ViewerMode};
 use crate::domain::usecase::viewer;
 use crate::presentation::state::AppState;
 
@@ -15,6 +15,17 @@ pub fn viewer_resolve_mode(path: String) -> ViewerMode {
 #[tauri::command(async)]
 pub fn viewer_resolve_link(state: State<'_, AppState>, base_dir: String, href: String) -> Result<LinkTarget, AppError> {
     viewer::resolve_link(&*state.fs, &*state.settings, &base_dir, &href)
+}
+
+#[tauri::command(async)]
+pub fn viewer_save_tabs(state: State<'_, AppState>, tabs: Vec<SavedTab>, active: Option<usize>) -> Result<(), AppError> {
+    viewer::save_tabs(&*state.settings, &tabs, active)
+}
+
+/// 앱 시작 때 되살릴 탭과 활성 탭 위치.
+#[tauri::command(async)]
+pub fn viewer_restore_tabs(state: State<'_, AppState>) -> (Vec<SavedTab>, Option<usize>) {
+    viewer::restore_tabs(&*state.fs, &*state.settings)
 }
 
 #[tauri::command(async)]

@@ -3,7 +3,9 @@ import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { useViewerVM } from "../../viewmodel/useViewerVM";
+import type { Element, ElementContent } from "hast";
+import { CodeBlock } from "./CodeBlock";
+import { activateLink, LinkMenu } from "./LinkMenu";
 
 /** 링크의 상대 경로 기준 폴더. 세션 대화는 프로젝트 루트를 넣는다. */
 export const LinkBase = createContext<string | null>(null);
@@ -21,17 +23,19 @@ const URL = /^[a-z][a-z0-9+.-]+:/i;
 export const Markdown = memo(function Markdown({ text, baseDir }: { text: string; baseDir?: string }) {
   const contextBase = useContext(LinkBase);
   const linkBase = baseDir ?? contextBase;
-  const openLink = useViewerVM((s) => s.openLink);
   const isFileLink = (href: string | undefined): href is string =>
     !!href && !!linkBase && !href.startsWith("#") && (!URL.test(href) || /^file:/i.test(href) || /^[A-Za-z]:[\\/]/.test(href));
 
   const components: Components = {
-    // 파일 링크는 오른쪽 뷰어에 탭으로 연다. 웹 주소는 앱 화면이 바뀌지 않게 주소만 보여 준다.
+    // 파일 링크는 오른쪽 뷰어에 탭으로 연다 (.exe 는 실행). 우클릭하면 여는 방법을 고른다.
+    // 웹 주소는 앱 화면이 바뀌지 않게 주소만 보여 준다.
     a: ({ children, href }) =>
       isFileLink(href) ? (
-        <a className="file-link" title={`뷰어에서 열기: ${href}`} onClick={() => openLink(linkBase!, href)}>
-          {children}
-        </a>
+        <LinkMenu baseDir={linkBase!} href={href}>
+          <a className="file-link" title={`뷰어에서 열기: ${href}`} onClick={() => activateLink(linkBase!, href)}>
+            {children}
+          </a>
+        </LinkMenu>
       ) : (
         <a title={href}>{children}</a>
       ),
@@ -39,12 +43,22 @@ export const Markdown = memo(function Markdown({ text, baseDir }: { text: string
       const text = typeof children === "string" ? children : null;
       if (!className && text && linkBase && CODE_PATH.test(text)) {
         return (
-          <code className="file-link" title="뷰어에서 열기" onClick={() => openLink(linkBase, text)}>
-            {text}
-          </code>
+          <LinkMenu baseDir={linkBase} href={text}>
+            <code className="file-link" title="뷰어에서 열기" onClick={() => activateLink(linkBase, text)}>
+              {text}
+            </code>
+          </LinkMenu>
         );
       }
       return <code className={className}>{children}</code>;
+    },
+    // 코드 블록(```lang) 은 펜스의 언어로 구문 강조한다.
+    pre: ({ node, children }) => {
+      const code = node?.children.find((c): c is Element => c.type === "element" && c.tagName === "code");
+      if (!code) return <pre>{children}</pre>;
+      const classes = (code.properties.className as string[] | undefined) ?? [];
+      const lang = classes.find((c) => c.startsWith("language-"))?.slice("language-".length) ?? "";
+      return <CodeBlock code={textOf(code).replace(/\n$/, "")} lang={lang} />;
     },
     img: ({ src, alt }) => <img alt={alt} src={resolveImage(src, baseDir)} />,
   };
@@ -54,6 +68,11 @@ export const Markdown = memo(function Markdown({ text, baseDir }: { text: string
     </ReactMarkdown>
   );
 });
+
+function textOf(node: ElementContent): string {
+  if (node.type === "text") return node.value;
+  return node.type === "element" ? node.children.map(textOf).join("") : "";
+}
 
 function resolveImage(src: string | undefined, baseDir: string | undefined) {
   if (!src || !baseDir || /^[a-z]+:/i.test(src)) return src;

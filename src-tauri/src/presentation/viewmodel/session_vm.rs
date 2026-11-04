@@ -93,6 +93,12 @@ pub fn session_answer_question(
     session::answer_question(&*state.process, &session_id, &request_id, &input, &answers)
 }
 
+/// 입력창 내용. 프론트가 타이핑을 잠시 멈췄을 때 보낸다.
+#[tauri::command(async)]
+pub fn session_save_draft(state: State<'_, AppState>, session_id: String, text: String) -> Result<(), AppError> {
+    session::save_draft(&*state.settings, &session_id, &text)
+}
+
 #[tauri::command(async)]
 pub fn session_abort(state: State<'_, AppState>, session_id: String) -> Result<(), AppError> {
     session::abort_session(&*state.process, &session_id)

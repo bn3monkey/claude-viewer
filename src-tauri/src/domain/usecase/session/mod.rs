@@ -151,6 +151,20 @@ fn compose_body(deps: &SendDeps, request: &SendMessage) -> Result<String, AppErr
     Ok(format!("{mention}\n\n{}", request.text))
 }
 
+/// 아직 보내지 않은 입력을 저장한다. 빈 본문은 지우고, 더는 활성이 아닌 세션의 초안도 함께 정리한다.
+pub fn save_draft(settings: &dyn SettingsRepository, session_id: &str, text: &str) -> Result<(), AppError> {
+    settings.update(&mut |s| {
+        if text.trim().is_empty() {
+            s.drafts.remove(session_id);
+        } else {
+            s.drafts.insert(session_id.to_string(), text.to_string());
+        }
+        let active: Vec<String> = s.projects.iter().flat_map(|p| p.active_sessions.clone()).collect();
+        s.drafts.retain(|id, _| active.contains(id));
+    })?;
+    Ok(())
+}
+
 /// v0 의 Abort 는 프로세스 kill 이다. 다음 메시지 때 `--resume` 으로 다시 띄운다.
 pub fn abort_session(process: &dyn ClaudeProcessRepository, id: &str) -> Result<(), AppError> {
     process.kill(id)
@@ -167,6 +181,7 @@ pub fn close_session(
         if let Some(project) = s.projects.iter_mut().find(|p| p.root == root) {
             project.active_sessions.retain(|active| active != id);
         }
+        s.drafts.remove(id);
     })?;
     Ok(())
 }
@@ -376,6 +391,30 @@ mod tests {
         close_session(&world.settings, &world.process, "/p", "s").unwrap();
         assert_eq!(world.process.killed(), vec!["s".to_string()]);
         assert!(world.settings.load().projects[0].active_sessions.is_empty());
+    }
+
+    #[test]
+    fn drafts_are_saved_cleared_and_pruned() {
+        let settings = FakeSettings::with_project("/p", &["s", "t"]);
+        save_draft(&settings, "s", "쓰다 만 글").unwrap();
+        save_draft(&settings, "t", "다른 글").unwrap();
+        assert_eq!(settings.load().drafts.get("s").map(String::as_str), Some("쓰다 만 글"));
+
+        save_draft(&settings, "s", "  ").unwrap();
+        assert!(!settings.load().drafts.contains_key("s"));
+
+        // 닫힌 세션의 초안은 다음 저장 때 사라진다.
+        settings.update(&mut |s| s.projects[0].active_sessions = vec!["s".into()]).unwrap();
+        save_draft(&settings, "s", "새 글").unwrap();
+        assert_eq!(settings.load().drafts.keys().collect::<Vec<_>>(), vec!["s"]);
+    }
+
+    #[test]
+    fn closing_a_session_drops_its_draft() {
+        let world = World::new();
+        save_draft(&world.settings, "s", "보내지 않은 글").unwrap();
+        close_session(&world.settings, &world.process, "/p", "s").unwrap();
+        assert!(world.settings.load().drafts.is_empty());
     }
 
     #[test]

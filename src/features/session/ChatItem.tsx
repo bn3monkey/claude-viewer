@@ -11,7 +11,7 @@ export const ChatItem = memo(function ChatItem({ event, sessionId }: { event: Ch
       return <div className="msg user">{event.text}</div>;
     case "assistantText":
       return (
-        <div className="msg assistant">
+        <div className="msg assistant md">
           <Markdown text={event.text} />
         </div>
       );
@@ -80,7 +80,7 @@ function PermissionCard({ event, sessionId }: { event: Extract<ChatEvent, { kind
         )}
       </div>
       {plan !== null ? (
-        <div className="plan">
+        <div className="plan md">
           <Markdown text={plan} />
         </div>
       ) : (

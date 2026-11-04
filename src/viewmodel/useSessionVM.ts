@@ -3,6 +3,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { ChatEvent } from "../generated/entity/ChatEvent";
 import type { Project } from "../generated/entity/Project";
 import type { RateWindow } from "../generated/entity/RateWindow";
+import type { Settings } from "../generated/entity/Settings";
 import { call } from "./invoke";
 import { useProjectVM } from "./useProjectVM";
 
@@ -24,6 +25,10 @@ type SessionVM = {
   pending: Record<string, string[]>;
   /** 가장 최근에 받은 사용량 창 (계정 단위라 세션과 무관). */
   rateWindows: RateWindow[] | null;
+  /** 세션별로 아직 보내지 않은 입력. settings.json 에 저장해 앱을 다시 켜도 남는다. */
+  drafts: Record<string, string>;
+  loadDrafts: () => Promise<void>;
+  setDraft: (sessionId: string, text: string) => void;
   ensureLoaded: (root: string, id: string) => Promise<void>;
   reload: (root: string, id: string) => Promise<void>;
   send: (args: SendArgs) => Promise<boolean>;
@@ -39,6 +44,18 @@ export const useSessionVM = create<SessionVM>((set, get) => ({
   live: {},
   pending: {},
   rateWindows: null,
+  drafts: {},
+
+  loadDrafts: async () => {
+    const settings = await call<Settings>("settings_get");
+    // 불러오는 사이에 입력한 내용이 있으면 그쪽을 남긴다.
+    if (settings) set({ drafts: { ...(settings.drafts as Record<string, string>), ...get().drafts } });
+  },
+
+  setDraft: (sessionId, text) => {
+    set({ drafts: { ...get().drafts, [sessionId]: text } });
+    saveDraftSoon(sessionId, text);
+  },
 
   ensureLoaded: async (root, id) => {
     if (!get().events[id]) await get().reload(root, id);
@@ -72,6 +89,18 @@ export const useSessionVM = create<SessionVM>((set, get) => ({
 
   abort: async (sessionId) => void (await call("session_abort", { sessionId })),
 }));
+
+/** 타이핑이 잠시 멈추면 저장한다. 비운 입력(Commit 후)은 바로 저장한다. */
+const draftTimers = new Map<string, number>();
+function saveDraftSoon(sessionId: string, text: string) {
+  window.clearTimeout(draftTimers.get(sessionId));
+  const save = () => {
+    draftTimers.delete(sessionId);
+    void call("session_save_draft", { sessionId, text });
+  };
+  if (!text) save();
+  else draftTimers.set(sessionId, window.setTimeout(save, 400));
+}
 
 function setPending(sessionId: string, update: (ids: string[]) => string[]) {
   const { pending } = useSessionVM.getState();

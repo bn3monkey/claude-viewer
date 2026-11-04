@@ -5,13 +5,14 @@ import type { ViewerMode } from "../../generated/entity/ViewerMode";
 import { useViewerVM, type ViewerTab } from "../../viewmodel/useViewerVM";
 import { DiffView } from "./DiffView";
 import { FindBar } from "./FindBar";
+import { previewModeOf } from "./LinkMenu";
 import { DocxView, HtmlView, ImageView, VideoView } from "./MediaViews";
 import { PdfView } from "./PdfView";
 import { TerminalView } from "./TerminalView";
 import { MarkdownView, SourceView } from "./TextViews";
 
 const MODE_LABEL: Record<ViewerMode, string> = {
-  source: "소스 · Syntax highlight",
+  source: "소스",
   markdown: "Markdown 렌더링",
   html: "HTML 렌더링 (sandbox)",
   pdf: "PDF 렌더링",
@@ -29,7 +30,7 @@ const TAB_SUFFIX: Partial<Record<ViewerMode, string>> = { markdown: " · 미리�
 
 /** ⑤ File Viewer (읽기 전용) */
 export function ViewerPanel() {
-  const { tabs, activeKey, activate, close, closeOthers, closeAll } = useViewerVM();
+  const { tabs, activeKey, activate, close, closeOthers, closeAll, switchMode } = useViewerVM();
   const active = tabs.find((t) => t.key === activeKey) ?? null;
   const [fitImage, setFitImage] = useState(true);
   const [menuTab, setMenuTab] = useState<string | null>(null);
@@ -120,7 +121,7 @@ export function ViewerPanel() {
               {active.mode === "diff" && active.diff && (
                 <span>{active.diff.branch ? `브랜치 ${active.diff.branch} 기준` : "작업 트리 · 마지막 커밋 기준"}</span>
               )}
-              <span>{MODE_LABEL[active.mode]}</span>
+              <ModeLabel tab={active} onSwitch={(mode) => switchMode(active.key, mode)} />
               {active.mode !== "terminal" && <span className="hint" style={{ marginLeft: 8 }}>읽기 전용</span>}
             </div>
           )}
@@ -151,6 +152,22 @@ export function ViewerPanel() {
           </div>
         ))}
     </div>
+  );
+}
+
+/** .md / .html 은 누를 때마다 소스 ↔ 미리 보기를 오가는 버튼, 나머지는 모드 이름. */
+function ModeLabel({ tab, onSwitch }: { tab: ViewerTab; onSwitch: (mode: ViewerMode) => void }) {
+  const preview = previewModeOf(tab.path);
+  if (!preview || (tab.mode !== "source" && tab.mode !== preview)) return <span>{MODE_LABEL[tab.mode]}</span>;
+  const showingSource = tab.mode === "source";
+  return (
+    <button
+      className="icon mode-toggle"
+      title={showingSource ? "누르면 미리 보기로 전환" : "누르면 소스로 전환"}
+      onClick={() => onSwitch(showingSource ? preview : "source")}
+    >
+      {showingSource ? "소스" : "미리 보기"}
+    </button>
   );
 }
 

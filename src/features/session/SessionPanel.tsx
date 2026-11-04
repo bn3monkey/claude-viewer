@@ -35,7 +35,8 @@ export function SessionPanel() {
   const settings = useConnectionVM((s) => s.settings);
   const [model, setModel] = useState<string | null>(null);
   const [permissionMode, setPermissionMode] = useState<string | null | undefined>(undefined);
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const drafts = useSessionVM((s) => s.drafts);
+  const setDraft = useSessionVM((s) => s.setDraft);
   const [sending, setSending] = useState(false);
 
   useEffect(() => {
@@ -66,7 +67,7 @@ export function SessionPanel() {
       attachedFile: attached,
     });
     setSending(false);
-    if (ok) setDrafts({ ...drafts, [session.id]: "" });
+    if (ok) setDraft(session.id, "");
   };
 
   if (!session || !project) {
@@ -160,7 +161,7 @@ export function SessionPanel() {
             <textarea
               placeholder="메시지를 입력하세요… (Ctrl+Enter 또는 Alt+Enter 로 Commit)"
               value={draft}
-              onChange={(e) => setDrafts({ ...drafts, [session.id]: e.target.value })}
+              onChange={(e) => setDraft(session.id, e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && (e.ctrlKey || e.metaKey || e.altKey)) {
                   e.preventDefault();

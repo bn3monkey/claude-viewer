@@ -7,7 +7,7 @@ import { SessionPanel } from "../features/session/SessionPanel";
 import { ViewerPanel } from "../features/viewer/ViewerPanel";
 import { useConnectionVM } from "../viewmodel/useConnectionVM";
 import { startProjectEvents, useProjectVM } from "../viewmodel/useProjectVM";
-import { startSessionEvents } from "../viewmodel/useSessionVM";
+import { startSessionEvents, useSessionVM } from "../viewmodel/useSessionVM";
 import { startTreeEvents, useTreeVM } from "../viewmodel/useTreeVM";
 import { startViewerEvents } from "../viewmodel/useViewerVM";
 import { PromptDialog } from "./PromptDialog";
@@ -19,6 +19,7 @@ export function App() {
   useEffect(() => {
     useConnectionVM.getState().init();
     useProjectVM.getState().load();
+    useSessionVM.getState().loadDrafts();
     const stops = [startProjectEvents(), startSessionEvents(), startTreeEvents(), startViewerEvents()];
     return () => stops.forEach((stop) => stop());
   }, []);

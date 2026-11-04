@@ -17,5 +17,5 @@ pub use error::AppError;
 pub use fs_node::{FsKind, FsNode};
 pub use project::Project;
 pub use session::{Session, SessionState};
-pub use settings::{ProjectEntry, Settings};
+pub use settings::{ProjectEntry, SavedTab, Settings};
 pub use viewer::{LinkTarget, TextContent, ViewerMode, ViewerRequest};

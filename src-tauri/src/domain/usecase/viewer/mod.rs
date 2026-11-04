@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use super::project::ensure_within_project;
-use crate::domain::entity::{AppError, LinkTarget, TextContent, ViewerMode, ViewerRequest};
+use crate::domain::entity::{AppError, LinkTarget, SavedTab, TextContent, ViewerMode, ViewerRequest};
 use crate::domain::repository::{FileSystemRepository, SettingsRepository, ShellRepository};
 
 /// `--append-system-prompt` 로 전달해 AI 가 File Viewer 지시문을 알게 한다.
@@ -169,6 +169,42 @@ pub fn percent_decode(text: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
+/// 열린 탭을 저장한다. 터미널 탭은 되살릴 수 없으므로 빼고, 활성 위치도 그에 맞춘다.
+pub fn save_tabs(settings: &dyn SettingsRepository, tabs: &[SavedTab], active: Option<usize>) -> Result<(), AppError> {
+    let (kept, active) = keep_tabs(tabs, active, |tab| tab.mode != ViewerMode::Terminal);
+    settings.update(&mut |s| {
+        s.viewer_tabs = kept.clone();
+        s.active_tab = active;
+    })?;
+    Ok(())
+}
+
+/// 저장된 탭 중 지금도 열 수 있는 것. 사라진 파일이나 닫힌 프로젝트의 탭은 건너뛴다.
+/// diff 탭은 지워진 파일도 보여 줄 수 있으므로 프로젝트가 열려 있는지만 본다.
+pub fn restore_tabs(fs: &dyn FileSystemRepository, settings: &dyn SettingsRepository) -> (Vec<SavedTab>, Option<usize>) {
+    let saved = settings.load();
+    keep_tabs(&saved.viewer_tabs, saved.active_tab, |tab| match &tab.diff {
+        Some(diff) => saved.projects.iter().any(|p| p.root == diff.root),
+        None => tab.mode != ViewerMode::Terminal && ensure_within_project(fs, settings, &tab.path).is_ok(),
+    })
+}
+
+/// 조건에 맞는 탭만 남긴다. 활성 탭이 빠지면 그 앞의 탭을 활성으로 한다.
+fn keep_tabs(tabs: &[SavedTab], active: Option<usize>, keep: impl Fn(&SavedTab) -> bool) -> (Vec<SavedTab>, Option<usize>) {
+    let mut kept = Vec::new();
+    let mut new_active = None;
+    for (i, tab) in tabs.iter().enumerate() {
+        if keep(tab) {
+            kept.push(tab.clone());
+        }
+        if Some(i) == active {
+            new_active = kept.len().checked_sub(1);
+        }
+    }
+    let new_active = new_active.or_else(|| (!kept.is_empty()).then_some(0));
+    (kept, new_active)
+}
+
 pub fn read_text(
     fs: &dyn FileSystemRepository,
     settings: &dyn SettingsRepository,
@@ -303,6 +339,50 @@ mod tests {
         assert_eq!(split_line_suffix("a.rs:x"), ("a.rs:x", None));
         assert_eq!(split_line_suffix("a.rs:0"), ("a.rs:0", None));
         assert_eq!(percent_decode("abc%"), "abc%");
+    }
+
+    fn tab(path: &str, mode: ViewerMode) -> SavedTab {
+        SavedTab { path: path.into(), mode, diff: None }
+    }
+
+    #[test]
+    fn saving_tabs_drops_terminals_and_keeps_the_active_one() {
+        let settings = FakeSettings::with_project("/p", &[]);
+        let tabs = [tab("/p/a.rs", ViewerMode::Source), tab("/p/run.bat", ViewerMode::Terminal), tab("/p/b.md", ViewerMode::Markdown)];
+        save_tabs(&settings, &tabs, Some(2)).unwrap();
+        let saved = settings.load();
+        assert_eq!(saved.viewer_tabs, vec![tabs[0].clone(), tabs[2].clone()]);
+        assert_eq!(saved.active_tab, Some(1));
+
+        // 활성 탭이 터미널이면 그 앞 탭을 활성으로.
+        save_tabs(&settings, &tabs, Some(1)).unwrap();
+        assert_eq!(settings.load().active_tab, Some(0));
+        save_tabs(&settings, &[], None).unwrap();
+        assert_eq!(settings.load().active_tab, None);
+    }
+
+    #[test]
+    fn restoring_skips_missing_files_and_closed_projects() {
+        let fs = FakeFs::with_dirs(&["/p"]);
+        fs.add_file("/p/a.rs");
+        let settings = FakeSettings::with_project("/p", &[]);
+        let deleted_diff = SavedTab {
+            diff: Some(crate::domain::entity::settings::SavedDiff { root: "/p".into(), branch: None, untracked: false }),
+            ..tab("/p/gone.rs", ViewerMode::Diff)
+        };
+        let other_diff = SavedTab {
+            diff: Some(crate::domain::entity::settings::SavedDiff { root: "/q".into(), branch: None, untracked: false }),
+            ..tab("/q/x.rs", ViewerMode::Diff)
+        };
+        let tabs = vec![tab("/p/a.rs", ViewerMode::Source), tab("/secret/k.pem", ViewerMode::Source), deleted_diff.clone(), other_diff];
+        settings.update(&mut |s| {
+            s.viewer_tabs = tabs.clone();
+            s.active_tab = Some(1);
+        }).unwrap();
+
+        let (restored, active) = restore_tabs(&fs, &settings);
+        assert_eq!(restored, vec![tabs[0].clone(), deleted_diff]);
+        assert_eq!(active, Some(0));
     }
 
     #[test]

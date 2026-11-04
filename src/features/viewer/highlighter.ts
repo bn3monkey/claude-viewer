@@ -74,8 +74,30 @@ async function loadLanguage(h: HighlighterCore, lang: string): Promise<string | 
   return loaded.get(lang)!.catch(() => null);
 }
 
-export async function highlight(code: string, path: string): Promise<string | null> {
-  const lang = languageOf(path);
+/** 마크다운 코드 펜스의 언어 이름 (```typescript, ```c++ 등) → LANGS 키. */
+const FENCE_ALIASES: Record<string, string> = {
+  typescript: "ts", javascript: "js", node: "js", rust: "rs", python: "py", py3: "py", golang: "go",
+  kotlin: "kt", ruby: "rb", csharp: "cs", "c#": "cs", "c++": "cpp", shell: "sh", shellscript: "sh",
+  console: "sh", terminal: "sh", powershell: "ps1", pwsh: "ps1", ps: "ps1", batch: "bat", docker: "dockerfile",
+  make: "makefile", patch: "diff", html: "html", xhtml: "html",
+};
+
+export function languageOfFence(tag: string): string | null {
+  const name = tag.trim().toLowerCase();
+  const lang = FENCE_ALIASES[name] ?? ALIASES[name] ?? name;
+  return lang in LANGS ? lang : null;
+}
+
+export function highlight(code: string, path: string): Promise<string | null> {
+  return highlightLanguage(code, languageOf(path));
+}
+
+/** 마크다운 코드 블록. 모르는 언어면 null. */
+export function highlightFence(code: string, tag: string): Promise<string | null> {
+  return highlightLanguage(code, languageOfFence(tag));
+}
+
+async function highlightLanguage(code: string, lang: string | null): Promise<string | null> {
   if (!lang) return null;
   highlighter ??= createHighlighterCore({
     themes: [import("@shikijs/themes/dark-plus")],
