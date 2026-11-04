@@ -154,6 +154,11 @@ input:focus, textarea:focus { border-color: var(--accent); }
 .codeblock .cb-head button:hover { color: var(--fg); }
 .codeblock pre.cb-body, .codeblock .cb-body pre { margin: 0; padding: 8px 12px; border-radius: 0; background: #1a1a1a !important; font: 12px/1.5 var(--mono); overflow: auto; white-space: pre; }
 .codeblock .cb-body pre code { font-size: inherit; }
+.codeblock .cb-actions { display: flex; gap: 2px; }
+.mermaid-view { padding: 12px; overflow: auto; text-align: center; background: #1a1a1a; }
+.mermaid-view svg { max-width: 100%; height: auto; }
+.mermaid-view.error { text-align: left; color: var(--red); font-size: 12px; }
+.mermaid-view.error pre { margin: 6px 0 0; color: var(--fg2); font: 11px/1.4 var(--mono); white-space: pre-wrap; }
 .pdf { background: #525659; padding: 16px; display: flex; flex-direction: column; align-items: center; gap: 12px; min-height: 100%; }
 .pdf .page { background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.4); }
 .docx { background: #808080; min-height: 100%; }
