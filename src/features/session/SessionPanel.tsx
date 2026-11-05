@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { useVirtualizer } from "@tanstack/react-virtual";
@@ -103,7 +103,8 @@ export function SessionPanel() {
       <PanelGroup direction="vertical" autoSaveId="layout-session">
         <Panel defaultSize={75} minSize={20}>
           <LinkBase.Provider value={project.root}>
-            <ChatList events={events} busy={session.busy} sessionId={session.id} />
+            {/* 세션마다 새로 그려 맨 아래에서 시작한다. */}
+            <ChatList key={session.id} events={events} busy={session.busy} sessionId={session.id} />
           </LinkBase.Provider>
         </Panel>
         <PanelResizeHandle className="resize-v" />
@@ -211,6 +212,14 @@ function ChatList({ events, busy, sessionId }: { events: ChatEvent[]; busy: bool
   useEffect(() => {
     if (stickToBottom.current && count > 0) virtualizer.scrollToIndex(count - 1, { align: "end" });
   }, [count, virtualizer]);
+
+  // 항목 높이는 그려진 뒤에야 재므로 전체 높이가 늘 때마다 다시 맨 아래로 붙인다.
+  // 그렇지 않으면 세션을 열었을 때 추정 높이만큼 위에서 멈춘다.
+  const totalSize = virtualizer.getTotalSize();
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    if (el && stickToBottom.current) el.scrollTop = el.scrollHeight;
+  }, [totalSize]);
 
   return (
     <div

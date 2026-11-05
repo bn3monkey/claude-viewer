@@ -71,6 +71,8 @@ impl TerminalRepository for TerminalRepositoryImpl {
         command.args(&spec.args);
         command.cwd(&spec.cwd);
         command.env("TERM", "xterm-256color");
+        // MSYS2 계열 bash 의 로그인 셸이 HOME 으로 옮겨 가지 않고 cwd 에 머물게 한다.
+        command.env("CHERE_INVOKING", "1");
         let mut child = pair
             .slave
             .spawn_command(command)

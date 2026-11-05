@@ -15,4 +15,12 @@ pub trait GitRepository: Send + Sync {
     /// unified diff. None 이면 바이너리.
     fn diff_working(&self, root: &str, path: &str, untracked: bool) -> Result<Option<String>, AppError>;
     fn diff_branch(&self, root: &str, branch: &str, path: &str) -> Result<Option<String>, AppError>;
+    /// 그 커밋이 바꾼 파일 (병합 커밋은 첫 부모 기준)
+    fn commit_changes(&self, root: &str, hash: &str) -> Result<Vec<GitChange>, AppError>;
+    /// 그 커밋에서 한 파일의 unified diff. None 이면 바이너리.
+    fn diff_commit(&self, root: &str, hash: &str, path: &str) -> Result<Option<String>, AppError>;
+    /// `git pull origin <branch>`
+    fn pull(&self, root: &str, branch: &str) -> Result<(), AppError>;
+    /// `git reset --hard HEAD`. 추적 중인 파일의 커밋하지 않은 변경을 모두 버린다.
+    fn reset_hard(&self, root: &str) -> Result<(), AppError>;
 }

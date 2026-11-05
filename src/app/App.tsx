@@ -3,6 +3,7 @@ import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { ConnectionBar } from "../features/connection/ConnectionBar";
 import { ProjectPanel } from "../features/projects/ProjectPanel";
 import { TreePanel } from "../features/tree/TreePanel";
+import { PullDialog } from "../features/tree/PullDialog";
 import { SessionPanel } from "../features/session/SessionPanel";
 import { ViewerPanel } from "../features/viewer/ViewerPanel";
 import { useConnectionVM } from "../viewmodel/useConnectionVM";
@@ -56,6 +57,7 @@ export function App() {
       </PanelGroup>
       <StatusBar />
       <PromptDialog />
+      <PullDialog />
       <SettingsDialog />
       <Toasts />
     </div>

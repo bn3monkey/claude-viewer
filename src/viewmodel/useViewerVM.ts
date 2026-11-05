@@ -8,8 +8,8 @@ import type { ViewerRequest } from "../generated/entity/ViewerRequest";
 import type { TextContent } from "../generated/entity/TextContent";
 import { call } from "./invoke";
 
-/** diff 탭은 어느 브랜치 기준인지 함께 기억한다. */
-export type DiffContext = { root: string; branch: string | null; untracked: boolean };
+/** diff 탭은 어느 브랜치(또는 커밋) 기준인지 함께 기억한다. */
+export type DiffContext = { root: string; branch: string | null; untracked: boolean; commit?: string | null };
 
 export type ViewerTab = ViewerRequest & {
   key: string;
@@ -44,12 +44,17 @@ const TERMINAL_LABEL = { cmd: "cmd", powerShell: "PowerShell", gitBash: "git bas
 
 const tabKey = (r: ViewerRequest, extra?: Extra) => {
   if (extra?.terminal) return `terminal|${extra.terminal.id}`;
-  return `${r.mode}|${extra?.diff ? `${extra.diff.branch ?? ""}|` : ""}${r.path}`;
+  const diff = extra?.diff;
+  return `${r.mode}|${diff ? `${diff.commit ? `@${diff.commit}` : (diff.branch ?? "")}|` : ""}${r.path}`;
 };
 const baseName = (path: string) => path.split(/[\\/]/).pop() ?? path;
 
 function makeTab(request: ViewerRequest, extra?: Extra): ViewerTab {
-  const name = extra?.terminal ? `${baseName(request.path)} · ${TERMINAL_LABEL[extra.terminal.kind]}` : baseName(request.path);
+  const name = extra?.terminal
+    ? `${baseName(request.path)} · ${TERMINAL_LABEL[extra.terminal.kind]}`
+    : extra?.diff?.commit
+      ? `${baseName(request.path)} @${extra.diff.commit.slice(0, 7)}`
+      : baseName(request.path);
   return { ...request, key: tabKey(request, extra), name, ...extra };
 }
 
@@ -158,7 +163,11 @@ export function startViewerEvents() {
     window.clearTimeout(timer);
     timer = window.setTimeout(() => {
       const { tabs, activeKey } = useViewerVM.getState();
-      const saved: SavedTab[] = tabs.map((t) => ({ path: t.path, mode: t.mode, diff: t.diff ?? null }));
+      const saved: SavedTab[] = tabs.map((t) => ({
+        path: t.path,
+        mode: t.mode,
+        diff: t.diff ? { ...t.diff, commit: t.diff.commit ?? null } : null,
+      }));
       const index = tabs.findIndex((t) => t.key === activeKey);
       void call("viewer_save_tabs", { tabs: saved, active: index < 0 ? null : index });
     }, 300);

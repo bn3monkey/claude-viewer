@@ -367,11 +367,11 @@ mod tests {
         fs.add_file("/p/a.rs");
         let settings = FakeSettings::with_project("/p", &[]);
         let deleted_diff = SavedTab {
-            diff: Some(crate::domain::entity::settings::SavedDiff { root: "/p".into(), branch: None, untracked: false }),
+            diff: Some(crate::domain::entity::settings::SavedDiff { root: "/p".into(), branch: None, untracked: false, commit: None }),
             ..tab("/p/gone.rs", ViewerMode::Diff)
         };
         let other_diff = SavedTab {
-            diff: Some(crate::domain::entity::settings::SavedDiff { root: "/q".into(), branch: None, untracked: false }),
+            diff: Some(crate::domain::entity::settings::SavedDiff { root: "/q".into(), branch: None, untracked: false, commit: None }),
             ..tab("/q/x.rs", ViewerMode::Diff)
         };
         let tabs = vec![tab("/p/a.rs", ViewerMode::Source), tab("/secret/k.pem", ViewerMode::Source), deleted_diff.clone(), other_diff];

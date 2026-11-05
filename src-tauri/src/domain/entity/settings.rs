@@ -6,7 +6,7 @@ use ts_rs::TS;
 use super::terminal::TerminalPaths;
 use super::viewer::ViewerMode;
 
-/// diff 탭이 기준으로 삼는 브랜치.
+/// diff 탭이 기준으로 삼는 브랜치 또는 커밋.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
@@ -14,6 +14,9 @@ pub struct SavedDiff {
     pub root: String,
     pub branch: Option<String>,
     pub untracked: bool,
+    /// 커밋 하나의 변경을 볼 때 그 해시
+    #[serde(default)]
+    pub commit: Option<String>,
 }
 
 /// 앱을 다시 켰을 때 되살릴 뷰어 탭. 터미널 탭은 프로세스라 저장하지 않는다.

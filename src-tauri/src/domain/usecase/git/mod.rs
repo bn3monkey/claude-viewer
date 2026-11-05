@@ -41,31 +41,70 @@ pub fn commits(deps: &GitDeps, root: &str, branch: Option<&str>) -> Result<Vec<G
     deps.git.commits(root, branch, COMMIT_LIMIT)
 }
 
-/// 커밋 전체 로그. 해시는 16진수만 받아 git 옵션으로 해석될 여지를 없앤다.
-pub fn commit_detail(deps: &GitDeps, root: &str, hash: &str) -> Result<String, AppError> {
-    ensure_within_project(deps.fs, deps.settings, root)?;
+/// 해시는 16진수만 받아 git 옵션으로 해석될 여지를 없앤다.
+fn ensure_hash(hash: &str) -> Result<(), AppError> {
     let valid = (4..=64).contains(&hash.len()) && hash.chars().all(|c| c.is_ascii_hexdigit());
     if !valid {
         return Err(AppError::InvalidPath(format!("커밋 해시가 아닙니다: {hash}")));
     }
+    Ok(())
+}
+
+/// 커밋 전체 로그
+pub fn commit_detail(deps: &GitDeps, root: &str, hash: &str) -> Result<String, AppError> {
+    ensure_within_project(deps.fs, deps.settings, root)?;
+    ensure_hash(hash)?;
     deps.git.commit_detail(root, hash)
 }
 
+/// 현재 브랜치를 origin 에서 받는다. 실패하면 git 이 낸 오류 문장이 `AppError::Io` 로 나간다.
+pub fn pull(deps: &GitDeps, root: &str) -> Result<(), AppError> {
+    ensure_within_project(deps.fs, deps.settings, root)?;
+    let current = deps
+        .git
+        .branches(root)?
+        .into_iter()
+        .find(|b| b.current)
+        .ok_or_else(|| AppError::NotFound("현재 브랜치가 없어 pull 할 수 없습니다 (detached HEAD).".into()))?;
+    deps.git.pull(root, &current.name)
+}
+
+/// 추적 중인 파일의 커밋하지 않은 변경을 모두 버리고 HEAD 로 되돌린다. 되돌릴 수 없다.
+pub fn reset_hard(deps: &GitDeps, root: &str) -> Result<(), AppError> {
+    ensure_within_project(deps.fs, deps.settings, root)?;
+    deps.git.reset_hard(root)
+}
+
+/// 커밋이 바꾼 파일
+pub fn commit_changes(deps: &GitDeps, root: &str, hash: &str) -> Result<Vec<GitChange>, AppError> {
+    ensure_within_project(deps.fs, deps.settings, root)?;
+    ensure_hash(hash)?;
+    deps.git.commit_changes(root, hash)
+}
+
+/// diff 의 기준. commit 이 있으면 그 커밋의 변경, 없으면 branch 기준.
+pub struct DiffRequest<'a> {
+    pub root: &'a str,
+    pub branch: Option<&'a str>,
+    pub commit: Option<&'a str>,
+    pub path: &'a str,
+    pub untracked: bool,
+}
+
 /// 텍스트로 볼 수 있는 파일(소스·txt·md·html)만 diff 를 만든다.
-pub fn diff(
-    deps: &GitDeps,
-    root: &str,
-    branch: Option<&str>,
-    path: &str,
-    untracked: bool,
-) -> Result<GitDiff, AppError> {
+pub fn diff(deps: &GitDeps, request: &DiffRequest) -> Result<GitDiff, AppError> {
+    let DiffRequest { root, branch, commit, path, untracked } = *request;
     ensure_within_project(deps.fs, deps.settings, &Path::new(root).join(path).to_string_lossy())?;
+    if let Some(hash) = commit {
+        ensure_hash(hash)?;
+    }
     if resolve_viewer_mode(path) != ViewerMode::Source {
         return Ok(GitDiff { text: String::new(), unsupported: true });
     }
-    let text = match other_branch(deps, root, branch)? {
-        Some(branch) => deps.git.diff_branch(root, &branch, path)?,
-        None => deps.git.diff_working(root, path, untracked)?,
+    let text = match (commit, other_branch(deps, root, branch)?) {
+        (Some(hash), _) => deps.git.diff_commit(root, hash, path)?,
+        (None, Some(branch)) => deps.git.diff_branch(root, &branch, path)?,
+        (None, None) => deps.git.diff_working(root, path, untracked)?,
     };
     Ok(match text {
         Some(text) => GitDiff { text, unsupported: false },
@@ -121,9 +160,23 @@ mod tests {
         assert!(commits(&deps, "/p", Some("main")).is_ok());
         assert!(matches!(commits(&deps, "/p", Some("--output=x")), Err(AppError::NotFound(_))));
         assert_eq!(commit_detail(&deps, "/p", "abc123").unwrap(), "detail abc123");
+        assert!(commit_changes(&deps, "/p", "abc123").is_ok());
+        assert!(commit_changes(&deps, "/p", "--stat").is_err());
         for bad in ["--stat", "abc", "xyz123", "abc123; rm"] {
             assert!(commit_detail(&deps, "/p", bad).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn pull_needs_a_current_branch_and_reset_always_runs_inside_the_project() {
+        let (fs, settings) = (FakeFs::with_dirs(&["/p"]), FakeSettings::with_project("/p", &[]));
+        let on_branch = FakeGit { repo: true, branches: vec![branch("main", true)], ..FakeGit::default() };
+        assert!(pull(&GitDeps { git: &on_branch, fs: &fs, settings: &settings }, "/p").is_ok());
+        let detached = FakeGit { repo: true, branches: vec![branch("main", false)], ..FakeGit::default() };
+        let deps = GitDeps { git: &detached, fs: &fs, settings: &settings };
+        assert!(matches!(pull(&deps, "/p"), Err(AppError::NotFound(_))));
+        assert!(reset_hard(&deps, "/p").is_ok());
+        assert!(matches!(reset_hard(&deps, "/outside"), Err(AppError::OutsideProject(_))));
     }
 
     #[test]
@@ -131,9 +184,12 @@ mod tests {
         let (fs, settings) = (FakeFs::with_dirs(&["/p"]), FakeSettings::with_project("/p", &[]));
         let git = FakeGit { repo: true, diff: Some("+x".into()), ..FakeGit::default() };
         let deps = GitDeps { git: &git, fs: &fs, settings: &settings };
-        assert_eq!(diff(&deps, "/p", None, "src/a.rs", false).unwrap().text, "+x");
-        assert!(diff(&deps, "/p", None, "docs/a.md", false).unwrap().text == "+x");
-        assert!(diff(&deps, "/p", None, "img.png", false).unwrap().unsupported);
-        assert!(matches!(diff(&deps, "/p", None, "../secret", false), Err(AppError::OutsideProject(_))));
+        let at = |path, commit| diff(&deps, &DiffRequest { root: "/p", branch: None, commit, path, untracked: false });
+        assert_eq!(at("src/a.rs", None).unwrap().text, "+x");
+        assert!(at("docs/a.md", None).unwrap().text == "+x");
+        assert!(at("img.png", None).unwrap().unsupported);
+        assert!(matches!(at("../secret", None), Err(AppError::OutsideProject(_))));
+        assert_eq!(at("src/a.rs", Some("abc123")).unwrap().text, "commit abc123");
+        assert!(at("src/a.rs", Some("--stat")).is_err());
     }
 }

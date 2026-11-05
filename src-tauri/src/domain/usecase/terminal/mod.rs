@@ -81,23 +81,69 @@ pub struct LaunchRequest<'a> {
 
 pub fn launch(deps: &TerminalDeps, request: &LaunchRequest) -> Result<TerminalSession, AppError> {
     let LaunchRequest { id, path, kind, cols, rows } = *request;
-    let valid_id = (8..=64).contains(&id.len()) && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
-    if !valid_id {
-        return Err(AppError::InvalidPath(format!("터미널 id 형식이 아닙니다: {id}")));
-    }
+    ensure_id(id)?;
     ensure_within_project(deps.fs, deps.settings, path)?;
     if !is_runnable(path) || deps.fs.is_dir(path) {
         return Err(AppError::InvalidPath(format!("터미널로 실행할 수 없는 파일입니다: {path}")));
     }
-    let program = effective_paths(deps.terminals, deps.settings)
-        .get(kind)
-        .map(str::to_string)
-        .ok_or_else(|| AppError::NotFound(format!("{} 경로를 찾지 못했습니다. 설정에서 지정해 주세요.", label(kind))))?;
+    let program = program(deps, kind)?;
     let file = Path::new(path);
     let cwd = file.parent().unwrap_or(file).to_string_lossy().into_owned();
     let args = command_args(kind, &program, path);
     deps.terminals.spawn(TerminalSpec { id: id.to_string(), program, args, cwd, cols, rows })?;
     Ok(TerminalSession { id: id.to_string(), kind, path: path.to_string() })
+}
+
+/// 폴더에서 셸만 띄운다. `path` 는 프로젝트 안의 폴더여야 한다.
+pub fn open_shell(deps: &TerminalDeps, request: &LaunchRequest) -> Result<TerminalSession, AppError> {
+    let LaunchRequest { id, path, kind, cols, rows } = *request;
+    ensure_id(id)?;
+    ensure_within_project(deps.fs, deps.settings, path)?;
+    if !deps.fs.is_dir(path) {
+        return Err(AppError::InvalidPath(format!("폴더가 아닙니다: {path}")));
+    }
+    let program = program(deps, kind)?;
+    let args = shell_args(kind);
+    deps.terminals.spawn(TerminalSpec { id: id.to_string(), program, args, cwd: path.to_string(), cols, rows })?;
+    Ok(TerminalSession { id: id.to_string(), kind, path: path.to_string() })
+}
+
+fn ensure_id(id: &str) -> Result<(), AppError> {
+    let valid_id = (8..=64).contains(&id.len()) && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
+    if !valid_id {
+        return Err(AppError::InvalidPath(format!("터미널 id 형식이 아닙니다: {id}")));
+    }
+    Ok(())
+}
+
+fn program(deps: &TerminalDeps, kind: TerminalKind) -> Result<String, AppError> {
+    effective_paths(deps.terminals, deps.settings)
+        .get(kind)
+        .map(str::to_string)
+        .ok_or_else(|| AppError::NotFound(format!("{} 경로를 찾지 못했습니다. 설정에서 지정해 주세요.", label(kind))))
+}
+
+/// 저장소 "터미널 열기" 가 쓸 셸. git bash 가 있으면 그것, 없으면 OS 기본 터미널.
+pub fn repo_shell_kind(deps: &TerminalDeps) -> TerminalKind {
+    let has_git_bash = effective_paths(deps.terminals, deps.settings).get(TerminalKind::GitBash).is_some();
+    fallback_shell_kind(has_git_bash, deps.terminals.is_windows())
+}
+
+pub fn fallback_shell_kind(has_git_bash: bool, is_windows: bool) -> TerminalKind {
+    match (has_git_bash, is_windows) {
+        (true, _) => TerminalKind::GitBash,
+        (false, true) => TerminalKind::PowerShell,
+        (false, false) => TerminalKind::MacTerminal,
+    }
+}
+
+/// 아무것도 실행하지 않고 대화형 셸만 띄우는 인자.
+pub fn shell_args(kind: TerminalKind) -> Vec<String> {
+    match kind {
+        TerminalKind::Cmd => Vec::new(),
+        TerminalKind::PowerShell => vec!["-NoLogo".into(), "-NoExit".into(), "-ExecutionPolicy".into(), "Bypass".into()],
+        TerminalKind::GitBash | TerminalKind::MacTerminal => vec!["-l".into(), "-i".into()],
+    }
 }
 
 pub fn label(kind: TerminalKind) -> &'static str {
@@ -177,5 +223,19 @@ mod tests {
             "'/Users/me/tool.exe'; exec '/bin/zsh' -l -i"
         );
         assert_eq!(sh_quote("it's"), r"'it'\''s'");
+    }
+
+    #[test]
+    fn repo_terminal_prefers_git_bash_then_the_os_default() {
+        assert_eq!(fallback_shell_kind(true, true), TerminalKind::GitBash);
+        assert_eq!(fallback_shell_kind(false, true), TerminalKind::PowerShell);
+        assert_eq!(fallback_shell_kind(false, false), TerminalKind::MacTerminal);
+    }
+
+    #[test]
+    fn shell_args_start_an_interactive_shell_without_running_anything() {
+        assert!(shell_args(TerminalKind::Cmd).is_empty());
+        assert!(shell_args(TerminalKind::PowerShell).contains(&"-NoExit".to_string()));
+        assert_eq!(shell_args(TerminalKind::GitBash), vec!["-l", "-i"]);
     }
 }

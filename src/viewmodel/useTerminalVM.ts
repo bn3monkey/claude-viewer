@@ -16,6 +16,14 @@ export const TERMINAL_MENU: { kind: TerminalKind; label: string; windows: boolea
   { kind: "macTerminal", label: "macOS Terminal로 실행 (macOS)", windows: false },
 ];
 
+/** 폴더 위치에서 셸만 여는 메뉴 */
+export const SHELL_MENU: { kind: TerminalKind; label: string; windows: boolean | null }[] = [
+  { kind: "cmd", label: "cmd로 Terminal 열기", windows: true },
+  { kind: "powerShell", label: "powershell로 Terminal 열기", windows: true },
+  { kind: "gitBash", label: "git bash로 Terminal 열기", windows: null },
+  { kind: "macTerminal", label: "macOS bash로 Terminal 열기", windows: false },
+];
+
 /**
  * 터미널 출력은 탭이 그려지기 전에도 도착하므로 여기서 모아 두고,
  * 화면(TerminalView)이 붙으면 쌓인 것부터 흘려보낸다.
@@ -46,7 +54,12 @@ export function disposeTerminal(id: string) {
   buffers.delete(id);
 }
 
-export async function launchTerminal(path: string, kind: TerminalKind) {
+export const launchTerminal = (path: string, kind: TerminalKind) => startTerminal("terminal_launch", path, kind);
+
+/** 그 폴더를 현재 위치로 셸을 연다. */
+export const openShell = (dir: string, kind: TerminalKind) => startTerminal("terminal_open_shell", dir, kind);
+
+async function startTerminal(command: "terminal_launch" | "terminal_open_shell", path: string, kind: TerminalKind) {
   // 구독을 먼저 마치고 실행해야 시작 직후 출력(ConPTY 의 커서 위치 질의 포함)을 놓치지 않는다.
   const id = crypto.randomUUID();
   const unlisten = [
@@ -57,7 +70,7 @@ export async function launchTerminal(path: string, kind: TerminalKind) {
   ];
   buffers.set(id, { chunks: [], sink: null, unlisten });
   await Promise.all(unlisten);
-  const session = await call<TerminalSession>("terminal_launch", { id, path, kind, cols: 100, rows: 30 });
+  const session = await call<TerminalSession>(command, { id, path, kind, cols: 100, rows: 30 });
   if (!session) {
     disposeTerminal(id);
     return;

@@ -13,11 +13,11 @@ export function DiffView({ path, diff }: { path: string; diff: DiffContext }) {
 
   useEffect(() => {
     let alive = true;
-    readDiff(diff.root, diff.branch, path, diff.untracked).then((d) => alive && d && setContent(d));
+    readDiff(diff.root, diff.branch, diff.commit ?? null, path, diff.untracked).then((d) => alive && d && setContent(d));
     return () => {
       alive = false;
     };
-  }, [path, diff.root, diff.branch, diff.untracked, nonce]);
+  }, [path, diff.root, diff.branch, diff.commit, diff.untracked, nonce]);
 
   useEffect(() => {
     setHtml(null);

@@ -1,7 +1,9 @@
 import { useEffect } from "react";
-import { GitBranch as BranchIcon, RefreshCw } from "lucide-react";
+import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
+import { Download, GitBranch as BranchIcon, RefreshCw } from "lucide-react";
 import type { GitChange } from "../../generated/entity/GitChange";
 import { useGitVM } from "../../viewmodel/useGitVM";
+import { usePullVM } from "../../viewmodel/usePullVM";
 import { useTreeChanged } from "../../viewmodel/useTreeVM";
 import { useViewerVM } from "../../viewmodel/useViewerVM";
 
@@ -25,9 +27,11 @@ const shortSubject = (s: string) => ([...s].length > SUBJECT_CHARS ? [...s].slic
 
 /** ③-b Git: 현재 브랜치, 브랜치 목록, 선택한 브랜치의 커밋과 변경 파일 */
 export function GitPanel({ root }: { root: string }) {
-  const { overview, branch, commits, changes, expanded, details, load, refresh, selectBranch, toggleCommit } = useGitVM();
+  const { overview, branch, commits, changes, expanded, details, commitChanges, load, refresh, selectBranch, toggleCommit } =
+    useGitVM();
   const nonce = useTreeChanged((s) => s.nonce);
   const open = useViewerVM((s) => s.open);
+  const { busy: pulling, pull } = usePullVM();
   const sep = root.includes("\\") ? "\\" : "/";
 
   useEffect(() => {
@@ -38,9 +42,9 @@ export function GitPanel({ root }: { root: string }) {
     if (nonce > 0) refresh();
   }, [nonce, refresh]);
 
-  const openDiff = (change: GitChange) => {
+  const openDiff = (change: GitChange, commit: string | null = null) => {
     const path = root + sep + change.path.replace(/\//g, sep);
-    open({ path, mode: "diff" }, { diff: { root, branch, untracked: change.untracked } });
+    open({ path, mode: "diff" }, { diff: { root, branch, untracked: change.untracked, commit } });
   };
 
   if (!overview) return <div className="empty">불러오는 중…</div>;
@@ -55,51 +59,84 @@ export function GitPanel({ root }: { root: string }) {
         <BranchIcon size={13} />
         <b title="현재 브랜치">{current?.name ?? "(detached)"}</b>
         <span className="spacer" />
+        <button
+          className="icon"
+          title={current ? `git pull origin ${current.name}` : "detached 상태라 pull 할 수 없습니다"}
+          disabled={pulling || !current}
+          onClick={() => pull(root)}
+        >
+          <Download size={12} />
+        </button>
         <button className="icon" title="새로 고침" onClick={refresh}>
           <RefreshCw size={12} />
         </button>
       </div>
-      <div className="git-section">브랜치</div>
-      <div className="git-branches">
-        {overview.branches.map((b) => (
-          <div
-            key={b.name}
-            className={`row ${b.name === selected ? "selected" : ""}`}
-            title={`${b.subject}\n${new Date(b.committedAt * 1000).toLocaleString()}`}
-            onClick={() => selectBranch(b.current ? null : b.name)}
-          >
-            <span className="ico">{b.current ? "●" : ""}</span>
-            <span className="name">{b.name}</span>
-            <span className="hint">{relativeTime(b.committedAt)}</span>
+      {/* 브랜치 · 커밋 · 변경 사이 경계를 끌어 크기를 바꾼다. 크기는 저장된다. */}
+      <PanelGroup direction="vertical" className="git-split" autoSaveId="layout-git">
+        <Panel defaultSize={22} minSize={8} className="git-pane">
+          <div className="git-section">브랜치</div>
+          <div className="git-branches">
+            {overview.branches.map((b) => (
+              <div
+                key={b.name}
+                className={`row ${b.name === selected ? "selected" : ""}`}
+                title={`${b.subject}\n${new Date(b.committedAt * 1000).toLocaleString()}`}
+                onClick={() => selectBranch(b.current ? null : b.name)}
+              >
+                <span className="ico">{b.current ? "●" : ""}</span>
+                <span className="name">{b.name}</span>
+                <span className="hint">{relativeTime(b.committedAt)}</span>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
-      <div className="git-section">커밋 · {selected}</div>
-      <div className="git-commits">
-        {commits === null && <div className="empty">불러오는 중…</div>}
-        {commits?.length === 0 && <div className="empty">커밋이 없습니다.</div>}
-        {commits?.map((c) => (
-          <div key={c.hash} className={`commit ${expanded === c.hash ? "open" : ""}`}>
-            <div className="row" title={c.subject} onClick={() => toggleCommit(c.hash)}>
-              <span className="hash">{c.hash.slice(0, 6)}</span>
-              <span className="time">{commitTime(c.committedAt)}</span>
-              <span className="name">{shortSubject(c.subject)}</span>
-            </div>
-            {expanded === c.hash && <pre className="commit-log">{details[c.hash] ?? "불러오는 중…"}</pre>}
+        </Panel>
+        <PanelResizeHandle className="resize-v" />
+        <Panel defaultSize={46} minSize={10} className="git-pane">
+          <div className="git-section">커밋 · {selected}</div>
+          <div className="git-commits">
+            {commits === null && <div className="empty">불러오는 중…</div>}
+            {commits?.length === 0 && <div className="empty">커밋이 없습니다.</div>}
+            {commits?.map((c) => (
+              <div key={c.hash} className={`commit ${expanded === c.hash ? "open" : ""}`}>
+                <div className="row" title={c.subject} onClick={() => toggleCommit(c.hash)}>
+                  <span className="hash">{c.hash.slice(0, 6)}</span>
+                  <span className="time">{commitTime(c.committedAt)}</span>
+                  <span className="name">{shortSubject(c.subject)}</span>
+                </div>
+                {expanded === c.hash && (
+                  <>
+                    <pre className="commit-log">{details[c.hash] ?? "불러오는 중…"}</pre>
+                    <div className="commit-files">
+                      {!commitChanges[c.hash] && <div className="empty">불러오는 중…</div>}
+                      {commitChanges[c.hash]?.length === 0 && <div className="empty">바뀐 파일이 없습니다.</div>}
+                      {commitChanges[c.hash]?.map((f) => (
+                        <div key={f.path} className="row" title={f.path} onClick={() => openDiff(f, c.hash)}>
+                          <span className={`gk ${f.kind}`}>{KIND_LABEL[f.kind]}</span>
+                          <span className="name">{f.path}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
-      <div className="git-section">{isOther ? `${branch} 가 바꾼 파일 (공통 조상 기준)` : "작업 트리 변경 (마지막 커밋 기준)"}</div>
-      <div className="git-changes">
-        {changes === null && <div className="empty">불러오는 중…</div>}
-        {changes?.length === 0 && <div className="empty">변경된 파일이 없습니다.</div>}
-        {changes?.map((c) => (
-          <div key={c.path} className="row" title={c.path} onClick={() => openDiff(c)}>
-            <span className={`gk ${c.kind}`}>{c.untracked ? "U" : KIND_LABEL[c.kind]}</span>
-            <span className="name">{c.path}</span>
+        </Panel>
+        <PanelResizeHandle className="resize-v" />
+        <Panel defaultSize={32} minSize={10} className="git-pane">
+          <div className="git-section">{isOther ? `${branch} 가 바꾼 파일 (공통 조상 기준)` : "작업 트리 변경 (마지막 커밋 기준)"}</div>
+          <div className="git-changes">
+            {changes === null && <div className="empty">불러오는 중…</div>}
+            {changes?.length === 0 && <div className="empty">변경된 파일이 없습니다.</div>}
+            {changes?.map((c) => (
+              <div key={c.path} className="row" title={c.path} onClick={() => openDiff(c)}>
+                <span className={`gk ${c.kind}`}>{c.untracked ? "U" : KIND_LABEL[c.kind]}</span>
+                <span className="name">{c.path}</span>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+        </Panel>
+      </PanelGroup>
     </div>
   );
 }

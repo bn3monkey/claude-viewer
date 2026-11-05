@@ -295,6 +295,18 @@ impl GitRepository for FakeGit {
     fn diff_branch(&self, _root: &str, _branch: &str, _path: &str) -> Result<Option<String>, AppError> {
         Ok(self.diff.clone())
     }
+    fn commit_changes(&self, _root: &str, _hash: &str) -> Result<Vec<GitChange>, AppError> {
+        Ok(self.working.clone())
+    }
+    fn diff_commit(&self, _root: &str, hash: &str, _path: &str) -> Result<Option<String>, AppError> {
+        Ok(Some(format!("commit {hash}")))
+    }
+    fn pull(&self, _root: &str, _branch: &str) -> Result<(), AppError> {
+        Ok(())
+    }
+    fn reset_hard(&self, _root: &str) -> Result<(), AppError> {
+        Ok(())
+    }
 }
 
 #[derive(Default)]

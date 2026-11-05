@@ -119,7 +119,13 @@ export function ViewerPanel() {
                 </button>
               )}
               {active.mode === "diff" && active.diff && (
-                <span>{active.diff.branch ? `브랜치 ${active.diff.branch} 기준` : "작업 트리 · 마지막 커밋 기준"}</span>
+                <span>
+                  {active.diff.commit
+                    ? `커밋 ${active.diff.commit.slice(0, 7)} 의 변경`
+                    : active.diff.branch
+                      ? `브랜치 ${active.diff.branch} 기준`
+                      : "작업 트리 · 마지막 커밋 기준"}
+                </span>
               )}
               <ModeLabel tab={active} onSwitch={(mode) => switchMode(active.key, mode)} />
               {active.mode !== "terminal" && <span className="hint" style={{ marginLeft: 8 }}>읽기 전용</span>}

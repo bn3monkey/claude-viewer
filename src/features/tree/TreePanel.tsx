@@ -6,7 +6,7 @@ import type { FsNode } from "../../generated/entity/FsNode";
 import { askConfirm, askText } from "../../app/PromptDialog";
 import { useTreeVM } from "../../viewmodel/useTreeVM";
 import { useViewerVM } from "../../viewmodel/useViewerVM";
-import { IS_WINDOWS, launchTerminal, runDefault, TERMINAL_MENU } from "../../viewmodel/useTerminalVM";
+import { IS_WINDOWS, launchTerminal, openShell, runDefault, SHELL_MENU, TERMINAL_MENU } from "../../viewmodel/useTerminalVM";
 import { GitPanel } from "./GitPanel";
 
 const ROW_HEIGHT = 22;
@@ -160,6 +160,8 @@ export function TreePanel() {
                 <>
                   <Item onSelect={() => createIn(root, "file")}>새 파일 생성</Item>
                   <Item onSelect={() => createIn(root, "dir")}>새 폴더 생성</Item>
+                  <ContextMenu.Separator className="sep" />
+                  <ShellItems dir={root} />
                 </>
               )}
               {target.kind === "dir" && (
@@ -172,6 +174,8 @@ export function TreePanel() {
                   <Item disabled shortcut="v1">클립보드에 복사</Item>
                   <ContextMenu.Separator className="sep" />
                   <PathItems node={target.node} />
+                  <ContextMenu.Separator className="sep" />
+                  <ShellItems dir={target.node.path} />
                   <ContextMenu.Separator className="sep" />
                   <Item danger onSelect={() => remove(target.node)} shortcut="Del">Directory 삭제</Item>
                 </>
@@ -206,6 +210,8 @@ export function TreePanel() {
                   <ContextMenu.Separator className="sep" />
                   <PathItems node={target.node} />
                   <ContextMenu.Separator className="sep" />
+                  <ShellItems dir={parentOf(target.node.path)} />
+                  <ContextMenu.Separator className="sep" />
                   <Item danger onSelect={() => remove(target.node)} shortcut="Del">File 삭제</Item>
                 </>
               )}
@@ -225,6 +231,19 @@ function PathItems({ node }: { node: FsNode }) {
       <Item onSelect={() => vm.reveal(node.path)}>탐색기로 열기</Item>
       <Item onSelect={() => vm.copyPath(node.path, false)}>절대 경로를 클립보드에 복사</Item>
       <Item onSelect={() => vm.copyPath(node.path, true)}>상대 경로를 클립보드에 복사</Item>
+    </>
+  );
+}
+
+/** 그 폴더(파일이면 들어 있는 폴더)를 위치로 셸을 뷰어 탭에 연다. */
+function ShellItems({ dir }: { dir: string }) {
+  return (
+    <>
+      {SHELL_MENU.map((t) => (
+        <Item key={t.kind} disabled={t.windows !== null && t.windows !== IS_WINDOWS} onSelect={() => openShell(dir, t.kind)}>
+          {t.label}
+        </Item>
+      ))}
     </>
   );
 }

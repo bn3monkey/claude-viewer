@@ -7,7 +7,9 @@ use crate::infrastructure::process::std_command;
 
 pub fn run(root: &Path, args: &[&str]) -> Result<String, String> {
     // 사용자 설정(i18n.logOutputEncoding=cp949 등)과 무관하게 UTF-8 로 받는다. git 이 커밋 인코딩에서 변환해 준다.
+    // 자격 증명을 물으면 창을 띄우지 않고 실패하게 한다 (pull 실패 대화상자로 이유를 보여준다).
     let output = std_command("git")
+        .env("GIT_TERMINAL_PROMPT", "0")
         .args(["-c", "core.quotepath=false", "-c", "i18n.logOutputEncoding=UTF-8"])
         .args(args)
         .current_dir(root)

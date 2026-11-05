@@ -12,9 +12,10 @@ type GitVM = {
   branch: string | null;
   commits: GitCommit[] | null;
   changes: GitChange[] | null;
-  /** 펼친 커밋 해시와 그 전체 로그 */
+  /** 펼친 커밋 해시와 그 전체 로그·바꾼 파일 */
   expanded: string | null;
   details: Record<string, string>;
+  commitChanges: Record<string, GitChange[]>;
   load: (root: string) => Promise<void>;
   refresh: () => Promise<void>;
   selectBranch: (branch: string | null) => Promise<void>;
@@ -29,9 +30,10 @@ export const useGitVM = create<GitVM>((set, get) => ({
   changes: null,
   expanded: null,
   details: {},
+  commitChanges: {},
 
   load: async (root) => {
-    if (root !== get().root) set({ root, overview: null, branch: null, commits: null, changes: null, expanded: null, details: {} });
+    if (root !== get().root) set({ root, overview: null, branch: null, commits: null, changes: null, expanded: null, details: {}, commitChanges: {} });
     await get().refresh();
   },
 
@@ -65,12 +67,19 @@ export const useGitVM = create<GitVM>((set, get) => ({
       return;
     }
     set({ expanded: hash });
-    if (root && !details[hash]) {
-      const detail = await call<string>("git_commit_detail", { root, hash });
-      if (detail !== undefined) set({ details: { ...get().details, [hash]: detail } });
-    }
+    if (!root) return;
+    await Promise.all([
+      !details[hash] &&
+        call<string>("git_commit_detail", { root, hash }).then((detail) => {
+          if (detail !== undefined && get().root === root) set({ details: { ...get().details, [hash]: detail } });
+        }),
+      !get().commitChanges[hash] &&
+        call<GitChange[]>("git_commit_changes", { root, hash }).then((list) => {
+          if (list && get().root === root) set({ commitChanges: { ...get().commitChanges, [hash]: list } });
+        }),
+    ]);
   },
 }));
 
-export const readDiff = (root: string, branch: string | null, path: string, untracked: boolean) =>
-  call<GitDiff>("git_diff", { root, branch, path, untracked });
+export const readDiff = (root: string, branch: string | null, commit: string | null, path: string, untracked: boolean) =>
+  call<GitDiff>("git_diff", { root, branch, commit, path, untracked });

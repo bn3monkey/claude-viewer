@@ -229,9 +229,11 @@ input:focus, textarea:focus { border-color: var(--accent); }
 .git { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .git-head { display: flex; gap: 6px; align-items: center; padding: 5px 10px; border-bottom: 1px solid var(--line); flex: none; }
 .git-section { padding: 4px 10px; font-size: 11px; color: var(--fg2); background: var(--bg3); border-bottom: 1px solid var(--line); border-top: 1px solid var(--line); flex: none; }
-.git-branches { max-height: 22%; overflow: auto; flex: none; }
-.git-commits { flex: 3; overflow: auto; min-height: 60px; }
-.git-changes { flex: 2; overflow: auto; min-height: 60px; }
+.git-split { flex: 1; min-height: 0; }
+.git-pane { display: flex; flex-direction: column; min-height: 0; }
+.git-pane > .git-section { border-top: none; }
+.git-branches, .git-commits, .git-changes { flex: 1; overflow: auto; min-height: 0; }
+.commit-files { padding: 2px 0 4px 10px; background: #1a1a1a; border-bottom: 1px solid var(--line); }
 .git .row .name { font-family: var(--mono); font-size: 12px; }
 .gk { font-family: var(--mono); font-size: 11px; width: 16px; text-align: center; border-radius: 3px; flex: none; }
 .gk.added { color: var(--green); } .gk.modified { color: var(--yellow); } .gk.deleted { color: var(--red); } .gk.renamed { color: var(--accent); }

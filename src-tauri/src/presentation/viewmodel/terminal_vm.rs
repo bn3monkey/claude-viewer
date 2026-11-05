@@ -24,6 +24,25 @@ pub fn terminal_launch(
     terminal::launch(&state.terminal_deps(), &terminal::LaunchRequest { id: &id, path: &path, kind, cols, rows })
 }
 
+/// 저장소에서 "터미널 열기" 를 누를 때 쓸 셸 (git bash 우선, 없으면 OS 기본)
+#[tauri::command(async)]
+pub fn terminal_repo_shell(state: State<'_, AppState>) -> TerminalKind {
+    terminal::repo_shell_kind(&state.terminal_deps())
+}
+
+/// 프로젝트 안의 폴더에서 셸을 연다.
+#[tauri::command(async)]
+pub fn terminal_open_shell(
+    state: State<'_, AppState>,
+    id: String,
+    path: String,
+    kind: TerminalKind,
+    cols: u16,
+    rows: u16,
+) -> Result<TerminalSession, AppError> {
+    terminal::open_shell(&state.terminal_deps(), &terminal::LaunchRequest { id: &id, path: &path, kind, cols, rows })
+}
+
 #[tauri::command(async)]
 pub fn terminal_write(state: State<'_, AppState>, id: String, data: String) -> Result<(), AppError> {
     state.terminals.write(&id, &data)

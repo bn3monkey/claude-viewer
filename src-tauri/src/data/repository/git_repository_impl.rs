@@ -59,4 +59,22 @@ impl GitRepository for GitRepositoryImpl {
         let diff = git(root, &["diff", &format!("HEAD...{branch}"), "--", path])?;
         Ok((!is_binary_diff(&diff)).then_some(diff))
     }
+
+    // `git show` 는 부모 없는 첫 커밋도 다룬다. 병합 커밋은 `-m --first-parent` 로 첫 부모와 비교한다.
+    fn commit_changes(&self, root: &str, hash: &str) -> Result<Vec<GitChange>, AppError> {
+        Ok(parse_name_status(&git(root, &["show", "--format=", "--name-status", "-m", "--first-parent", hash, "--"])?))
+    }
+
+    fn diff_commit(&self, root: &str, hash: &str, path: &str) -> Result<Option<String>, AppError> {
+        let diff = git(root, &["show", "--format=", "--no-color", "-m", "--first-parent", hash, "--", path])?;
+        Ok((!is_binary_diff(&diff)).then_some(diff))
+    }
+
+    fn pull(&self, root: &str, branch: &str) -> Result<(), AppError> {
+        git(root, &["pull", "--no-edit", "origin", branch]).map(|_| ())
+    }
+
+    fn reset_hard(&self, root: &str) -> Result<(), AppError> {
+        git(root, &["reset", "--hard", "HEAD"]).map(|_| ())
+    }
 }
