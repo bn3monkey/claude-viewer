@@ -245,6 +245,7 @@ input:focus, textarea:focus { border-color: var(--accent); }
 /* HTML 렌더링, diff */
 .viewer .vbody.frame { overflow: hidden; background: #fff; }
 .html-frame { width: 100%; height: 100%; border: 0; display: block; background: #fff; }
+.md a.web-link { cursor: pointer; }
 .code.diff pre.plain .line.add { background: rgba(78, 201, 122, .15); }
 .code.diff pre.plain .line.del { background: rgba(241, 76, 76, .15); }
 

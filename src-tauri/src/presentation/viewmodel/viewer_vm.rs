@@ -44,6 +44,12 @@ pub fn viewer_open_external(state: State<'_, AppState>, path: String) -> Result<
     viewer::open_external(&*state.fs, &*state.settings, &*state.shell, &path)
 }
 
+/// 대화·마크다운 속 http(s) 링크를 기본 브라우저로 연다.
+#[tauri::command(async)]
+pub fn viewer_open_url(state: State<'_, AppState>, url: String) -> Result<(), AppError> {
+    viewer::open_web_link(&*state.shell, &url)
+}
+
 /// `htmlview` 스킴. 프로젝트 안의 HTML 과 그 파일이 참조하는 css·이미지를 그대로 서빙한다.
 /// URL 경로가 파일 경로 구조를 유지하므로 iframe 안의 상대 경로가 같은 폴더로 풀린다.
 /// 앱 CSP 를 물려받지 않도록 srcdoc 대신 이 스킴을 iframe src 로 쓴다.

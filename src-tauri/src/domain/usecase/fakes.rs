@@ -213,8 +213,15 @@ impl FakeFs {
 }
 
 impl FileSystemRepository for FakeFs {
+    /// 루트 아래 파일을 평평하게 돌려준다.
     fn list(&self, root: &str) -> Result<FsNode, AppError> {
-        Ok(FsNode { path: root.into(), name: root.into(), kind: FsKind::Dir, children: Some(Vec::new()) })
+        let mut files: Vec<_> = self.files.lock().unwrap().iter().filter(|f| f.starts_with(root)).cloned().collect();
+        files.sort();
+        let children = files
+            .into_iter()
+            .map(|f| FsNode { path: f.to_string_lossy().into_owned(), name: String::new(), kind: FsKind::File, children: None })
+            .collect();
+        Ok(FsNode { path: root.into(), name: root.into(), kind: FsKind::Dir, children: Some(children) })
     }
     fn canonicalize(&self, path: &str) -> Result<PathBuf, AppError> {
         let mut out = PathBuf::new();

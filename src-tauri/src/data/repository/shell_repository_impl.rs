@@ -21,6 +21,10 @@ impl ShellRepository for ShellRepositoryImpl {
         self.app.opener().open_url(url.as_str(), None::<&str>).map_err(|e| AppError::Io(e.to_string()))
     }
 
+    fn open_url(&self, url: &str) -> Result<(), AppError> {
+        self.app.opener().open_url(url, None::<&str>).map_err(|e| AppError::Io(e.to_string()))
+    }
+
     fn run_executable(&self, path: &str) -> Result<(), AppError> {
         let program = std::path::Path::new(path);
         let cwd = program.parent().unwrap_or(program);

@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 
 use super::project::ensure_within_project;
 use crate::domain::entity::{AppError, LinkTarget, SavedTab, TextContent, ViewerMode, ViewerRequest};
@@ -112,10 +112,8 @@ pub fn resolve_link(
         return Err(AppError::InvalidPath(format!("파일 경로가 아닙니다: {href}")));
     }
 
-    let path = Path::new(base_dir).join(target);
-    if !fs.exists(&path) {
-        return Err(AppError::NotFound(format!("파일을 찾을 수 없습니다: {target}")));
-    }
+    let path = find_link_target(fs, settings, base_dir, target)
+        .ok_or_else(|| AppError::NotFound(format!("파일을 찾을 수 없습니다: {target}")))?;
     let path = path.to_string_lossy().into_owned();
     ensure_within_project(fs, settings, &path)?;
     if fs.is_dir(&path) {
@@ -123,6 +121,99 @@ pub fn resolve_link(
     }
     let mode = resolve_viewer_mode(&path);
     Ok(LinkTarget { request: ViewerRequest { path, mode }, line: line.filter(|_| mode == ViewerMode::Source) })
+}
+
+/// 링크 경로를 다음 순서로 찾는다.
+/// 1. git bash 식 `/d/repo/a.md` 는 `D:/repo/a.md` 로 (Windows)
+/// 2. base_dir 과 그 위 폴더를 프로젝트 루트까지. `.md` 미리 보기 속 루트 기준 경로도 찾는다.
+/// 3. 프로젝트 안에서 경로 끝이 같은 파일 (가장 얕은 것). AI 가 하위 폴더로 cd 한 뒤 쓴 상대 경로도 찾는다.
+fn find_link_target(
+    fs: &dyn FileSystemRepository,
+    settings: &dyn SettingsRepository,
+    base_dir: &str,
+    target: &str,
+) -> Option<PathBuf> {
+    if cfg!(windows) {
+        if let Some(path) = msys_drive_path(target).map(|p| normalize(Path::new(&p))) {
+            if fs.exists(&path) {
+                return Some(path);
+            }
+        }
+    }
+    let target = normalize(Path::new(target));
+    let root = project_root_of(fs, settings, base_dir);
+    let canonical_root = root.as_deref().and_then(|r| fs.canonicalize(r).ok());
+    for dir in Path::new(base_dir).ancestors() {
+        let candidate = normalize(&dir.join(&target));
+        if fs.exists(&candidate) {
+            return Some(candidate);
+        }
+        // 프로젝트 루트보다 위로는 올라가지 않는다.
+        let at_root = canonical_root.is_some() && fs.canonicalize(&dir.to_string_lossy()).ok() == canonical_root;
+        if at_root || canonical_root.is_none() {
+            break;
+        }
+    }
+    let searchable = target.is_relative() && !target.components().any(|c| matches!(c, Component::ParentDir));
+    if !searchable {
+        return None;
+    }
+    let tree = fs.list(root.as_deref()?).ok()?;
+    let mut files = Vec::new();
+    collect_files(&tree, &mut files);
+    files
+        .into_iter()
+        .map(PathBuf::from)
+        .filter(|p| p.ends_with(&target))
+        .min_by_key(|p| p.components().count())
+}
+
+/// base_dir 을 품은 등록 프로젝트 루트. 겹치면 가장 깊은 것.
+fn project_root_of(fs: &dyn FileSystemRepository, settings: &dyn SettingsRepository, base_dir: &str) -> Option<String> {
+    let base = fs.canonicalize(base_dir).ok()?;
+    settings
+        .load()
+        .projects
+        .into_iter()
+        .filter_map(|p| fs.canonicalize(&p.root).ok().map(|c| (p.root, c)))
+        .filter(|(_, canonical)| base.starts_with(canonical))
+        .max_by_key(|(_, canonical)| canonical.components().count())
+        .map(|(root, _)| root)
+}
+
+fn collect_files(node: &crate::domain::entity::FsNode, out: &mut Vec<String>) {
+    match &node.children {
+        Some(children) => children.iter().for_each(|child| collect_files(child, out)),
+        None => out.push(node.path.clone()),
+    }
+}
+
+/// 구분자를 OS 기본으로 맞추고 `.` 조각을 뗀다. 같은 파일이 다른 탭으로 열리지 않게 한다.
+fn normalize(path: &Path) -> PathBuf {
+    path.components().filter(|c| !matches!(c, Component::CurDir)).collect()
+}
+
+/// `/d/repo/a` → `D:/repo/a`. git bash 가 쓰는 드라이브 표기.
+fn msys_drive_path(target: &str) -> Option<String> {
+    let bytes = target.as_bytes();
+    let drive = *bytes.get(1)?;
+    let is_drive = bytes[0] == b'/' && drive.is_ascii_alphabetic() && matches!(bytes.get(2), None | Some(b'/'));
+    is_drive.then(|| format!("{}:{}", (drive as char).to_ascii_uppercase(), if bytes.len() > 2 { &target[2..] } else { "/" }))
+}
+
+/// 대화·마크다운 속 웹 주소를 기본 브라우저로 연다. http(s) 만 받는다.
+pub fn open_web_link(shell: &dyn ShellRepository, url: &str) -> Result<(), AppError> {
+    let url = url.trim();
+    if !is_web_url(url) {
+        return Err(AppError::InvalidPath(format!("http(s) 주소가 아닙니다: {url}")));
+    }
+    shell.open_url(url)
+}
+
+pub fn is_web_url(url: &str) -> bool {
+    let lower = url.to_ascii_lowercase();
+    let rest = lower.strip_prefix("https://").or_else(|| lower.strip_prefix("http://"));
+    rest.is_some_and(|r| !r.is_empty()) && !url.chars().any(|c| c.is_whitespace() || c.is_control())
 }
 
 /// `L42`, `L42-L50`, `L42C3` → 42
@@ -330,6 +421,35 @@ mod tests {
         assert!(matches!(link("/secret/key.pem"), Err(AppError::OutsideProject(_))));
         assert!(link("../secret/key.pem").is_err());
         assert!(matches!(link("#L3"), Err(AppError::InvalidPath(_))));
+    }
+
+    #[test]
+    fn links_fall_back_to_parent_folders_and_then_to_a_project_wide_suffix_match() {
+        let fs = FakeFs::with_dirs(&["/p", "/p/docs", "/p/docs/progress", "/p/lib", "/p/lib/core", "/p/lib/core/src"]);
+        for file in ["/p/docs/progress/a.md", "/p/lib/core/src/x.rs", "/p/lib/core/src/deep/x.rs"] {
+            fs.add_file(file);
+        }
+        let settings = FakeSettings::with_project("/p", &[]);
+        let at = |base: &str, href: &str| resolve_link(&fs, &settings, base, href).map(|t| t.request.path.replace('\\', "/"));
+        // .md 미리 보기(기준 폴더 /p/docs/progress)에서 루트 기준 경로
+        assert_eq!(at("/p/docs/progress", "docs/progress/a.md").unwrap(), "/p/docs/progress/a.md");
+        // 세션(기준 /p)에서 AI 가 하위 폴더 기준으로 쓴 경로. 가장 얕은 파일을 고른다.
+        assert_eq!(at("/p", "src/x.rs").unwrap(), "/p/lib/core/src/x.rs");
+        assert_eq!(at("/p", "./src/x.rs:3").unwrap(), "/p/lib/core/src/x.rs");
+        assert!(matches!(at("/p", "src/nope.rs"), Err(AppError::NotFound(_))));
+        assert!(at("/p/docs", "../../secret/key.pem").is_err());
+    }
+
+    #[test]
+    fn git_bash_drive_paths_and_web_urls() {
+        assert_eq!(msys_drive_path("/d/repo/a.md").as_deref(), Some("D:/repo/a.md"));
+        assert_eq!(msys_drive_path("/d").as_deref(), Some("D:/"));
+        assert_eq!(msys_drive_path("/docs/a.md"), None);
+        assert_eq!(msys_drive_path("docs/a.md"), None);
+        assert!(is_web_url("https://example.com/a?b=1") && is_web_url("HTTP://x.y"));
+        for bad in ["https://", "file:///c:/a", "javascript:alert(1)", "https://a b", "ftp://x"] {
+            assert!(!is_web_url(bad), "{bad}");
+        }
     }
 
     #[test]

@@ -239,6 +239,9 @@ mod tests {
         fn open_in_browser(&self, _path: &str) -> Result<(), AppError> {
             Ok(())
         }
+        fn open_url(&self, _url: &str) -> Result<(), AppError> {
+            Ok(())
+        }
         fn run_executable(&self, path: &str) -> Result<(), AppError> {
             self.0.lock().unwrap().push(path.into());
             Ok(())

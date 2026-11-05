@@ -4,6 +4,7 @@ import remarkGfm from "remark-gfm";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import type { Element, ElementContent } from "hast";
+import { call } from "../../viewmodel/invoke";
 import { CodeBlock } from "./CodeBlock";
 import { activateLink, LinkMenu } from "./LinkMenu";
 
@@ -18,6 +19,7 @@ const schema = { ...defaultSchema, protocols };
 /** `src/a.rs`, `src/a.rs:42`, `C:\p\a.rs` 처럼 폴더 구분자가 있는 파일 경로. */
 const CODE_PATH = /^(?:[A-Za-z]:)?[\w.@~\-\\/]*[\\/][\w.@\-]+\.[A-Za-z0-9]{1,10}(?::\d+(?:[:-]\d+)?)?$/;
 const URL = /^[a-z][a-z0-9+.-]+:/i;
+const WEB_URL = /^https?:\/\//i;
 
 /** 세션 대화 출력과 .md 미리보기 공용. baseDir 이 있으면 상대 경로 이미지·링크를 그 폴더 기준으로 읽는다. */
 export const Markdown = memo(function Markdown({ text, baseDir }: { text: string; baseDir?: string }) {
@@ -28,7 +30,7 @@ export const Markdown = memo(function Markdown({ text, baseDir }: { text: string
 
   const components: Components = {
     // 파일 링크는 오른쪽 뷰어에 탭으로 연다 (.exe 는 실행). 우클릭하면 여는 방법을 고른다.
-    // 웹 주소는 앱 화면이 바뀌지 않게 주소만 보여 준다.
+    // http(s) 주소는 기본 브라우저로 연다. 그 밖의 스킴은 앱 화면이 바뀌지 않게 주소만 보여 준다.
     a: ({ children, href }) =>
       isFileLink(href) ? (
         <LinkMenu baseDir={linkBase!} href={href}>
@@ -36,6 +38,10 @@ export const Markdown = memo(function Markdown({ text, baseDir }: { text: string
             {children}
           </a>
         </LinkMenu>
+      ) : href && WEB_URL.test(href) ? (
+        <a className="web-link" title={`브라우저로 열기: ${href}`} onClick={() => void call("viewer_open_url", { url: href })}>
+          {children}
+        </a>
       ) : (
         <a title={href}>{children}</a>
       ),

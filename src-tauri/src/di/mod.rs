@@ -77,6 +77,7 @@ pub fn run() {
             viewer_vm::viewer_read_text,
             viewer_vm::viewer_read_bytes,
             viewer_vm::viewer_open_external,
+            viewer_vm::viewer_open_url,
             git_vm::git_overview,
             git_vm::git_commits,
             git_vm::git_commit_detail,
