@@ -27,6 +27,9 @@ type SessionVM = {
   rateWindows: RateWindow[] | null;
   /** 세션별로 아직 보내지 않은 입력. settings.json 에 저장해 앱을 다시 켜도 남는다. */
   drafts: Record<string, string>;
+  /** 세션별로 compact 를 이미 물어본 단계 (0.5 / 0.75 / 0.9). 0 이면 아직 묻지 않음. */
+  compactAsked: Record<string, number>;
+  setCompactAsked: (sessionId: string, step: number) => void;
   loadDrafts: () => Promise<void>;
   setDraft: (sessionId: string, text: string) => void;
   ensureLoaded: (root: string, id: string) => Promise<void>;
@@ -45,6 +48,9 @@ export const useSessionVM = create<SessionVM>((set, get) => ({
   pending: {},
   rateWindows: null,
   drafts: {},
+  compactAsked: {},
+
+  setCompactAsked: (sessionId, step) => set({ compactAsked: { ...get().compactAsked, [sessionId]: step } }),
 
   loadDrafts: async () => {
     const settings = await call<Settings>("settings_get");
@@ -162,6 +168,12 @@ export function startSessionEvents() {
 }
 
 /** 세션 이벤트에서 사용량 요약을 뽑는다. */
+/** 컨텍스트가 이 비율을 넘을 때마다 compact 할지 묻는다. */
+export const COMPACT_STEPS = [0.5, 0.75, 0.9] as const;
+
+/** 지금 비율이 넘은 가장 높은 단계. 아무 단계도 넘지 않았으면 0. */
+export const compactStep = (ratio: number) => COMPACT_STEPS.filter((s) => ratio >= s).pop() ?? 0;
+
 export function summarizeUsage(events: ChatEvent[]) {
   let contextTokens = 0;
   let contextWindow = 0;

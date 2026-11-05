@@ -6,7 +6,7 @@ import { ChevronDown, X } from "lucide-react";
 import type { ChatEvent } from "../../generated/entity/ChatEvent";
 import { useConnectionVM } from "../../viewmodel/useConnectionVM";
 import { findSession, useProjectVM } from "../../viewmodel/useProjectVM";
-import { summarizeUsage, useSessionVM } from "../../viewmodel/useSessionVM";
+import { compactStep, summarizeUsage, useSessionVM } from "../../viewmodel/useSessionVM";
 import { useTreeVM } from "../../viewmodel/useTreeVM";
 import { LinkBase } from "../viewer/Markdown";
 import { ChatItem } from "./ChatItem";
@@ -54,6 +54,22 @@ export function SessionPanel() {
   // 응답 중에도 보낼 수 있다. CLI 가 진행 중인 턴에 덧붙여 다음 단계에서 읽는다.
   const canCommit = !!session && !runningElsewhere && !sending && draft.trim().length > 0;
   const usage = useMemo(() => summarizeUsage(events), [events]);
+  const ctxRatio = usage.contextWindow > 0 ? usage.contextTokens / usage.contextWindow : 0;
+  const step = compactStep(ctxRatio);
+  const asked = useSessionVM((s) => (session ? (s.compactAsked[session.id] ?? 0) : 0));
+  const setCompactAsked = useSessionVM((s) => s.setCompactAsked);
+
+  // compact 로 컨텍스트가 줄면 다음에 다시 넘을 때 또 묻는다.
+  useEffect(() => {
+    if (session && step < asked) setCompactAsked(session.id, step);
+  }, [session?.id, step, asked, setCompactAsked]);
+  // 응답이 끝나 한가할 때, 새 단계를 넘었으면 묻는다.
+  const askCompact = idle && step > asked;
+
+  const runCompact = () => {
+    if (!session || !project) return;
+    void compact({ root: project.root, sessionId: session.id, model: currentModel, permissionMode: currentPermission });
+  };
 
   const commit = async () => {
     if (!session || !project || !canCommit) return;
@@ -98,7 +114,7 @@ export function SessionPanel() {
         {...usage}
         rateWindows={rateWindows}
         canCompact={idle && usage.contextTokens > 0}
-        onCompact={() => compact({ root: project.root, sessionId: session.id, model: currentModel, permissionMode: currentPermission })}
+        onCompact={runCompact}
       />
       <PanelGroup direction="vertical" autoSaveId="layout-session">
         <Panel defaultSize={75} minSize={20}>
@@ -110,6 +126,25 @@ export function SessionPanel() {
         <PanelResizeHandle className="resize-v" />
         <Panel defaultSize={25} minSize={12}>
           <div className="compose">
+            {askCompact && (
+              <div className="compact-ask">
+                <span>
+                  컨텍스트가 <b>{Math.round(ctxRatio * 100)}%</b> 찼습니다 ({Math.round(step * 100)}% 넘음). 지금 compact 할까요?
+                  <span className="hint"> 대화를 요약해 다음 요청부터 토큰을 덜 씁니다.</span>
+                </span>
+                <span className="spacer" />
+                <button
+                  className="primary"
+                  onClick={() => {
+                    setCompactAsked(session.id, step);
+                    runCompact();
+                  }}
+                >
+                  Compact
+                </button>
+                <button onClick={() => setCompactAsked(session.id, step)}>나중에</button>
+              </div>
+            )}
             <div className="ctx">
               <span>선택 파일</span>
               {relative ? (
