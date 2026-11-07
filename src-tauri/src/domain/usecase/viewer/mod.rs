@@ -1,11 +1,11 @@
 use std::path::{Component, Path, PathBuf};
 
 use super::project::ensure_within_project;
-use crate::domain::entity::{AppError, LinkTarget, SavedTab, TextContent, ViewerMode, ViewerRequest};
+use crate::domain::entity::{AppError, DefinitionHit, LinkTarget, SavedTab, TextContent, ViewerMode, ViewerRequest};
 use crate::domain::repository::{FileSystemRepository, SettingsRepository, ShellRepository};
 
 /// `--append-system-prompt` 로 전달해 AI 가 File Viewer 지시문을 알게 한다.
-pub const VIEWER_SYSTEM_PROMPT: &str = "This session runs inside Claude Viewer, which has a read-only File Viewer panel. \
+pub const VIEWER_SYSTEM_PROMPT: &str = "This session runs inside Claude Viewer, which has a File Viewer panel. \
 To show the user a project file there, include this tag in your reply: \
 <viewer open=\"relative/path\" mode=\"source|markdown|html|pdf|docx|image|video\"/> \
 The mode attribute is optional. The tag is removed from the displayed text. \
@@ -325,6 +325,205 @@ pub fn open_external(
     shell.open_in_browser(path)
 }
 
+/// 뷰어에서 고친 텍스트를 저장한다. 프로젝트 밖은 거부.
+pub fn write_text(
+    fs: &dyn FileSystemRepository,
+    settings: &dyn SettingsRepository,
+    path: &str,
+    text: &str,
+) -> Result<(), AppError> {
+    ensure_within_project(fs, settings, path)?;
+    fs.write_text(Path::new(path), text)
+}
+
+/// F12 로 찾는 파일 확장자. 빌드 산출물·의존성 폴더는 건너뛴다.
+const CODE_EXTENSIONS: &[&str] = &[
+    "ts", "tsx", "mts", "cts", "js", "jsx", "mjs", "cjs", "vue", "rs", "py", "go", "java", "kt", "kts", "swift", "c",
+    "h", "cpp", "hpp", "cc", "cxx", "hh", "cs", "sh", "bash", "ps1", "lua", "rb", "php", "scala", "dart", "zig", "m",
+    "mm",
+];
+const SKIPPED_DIRS: &[&str] = &[
+    "node_modules", "target", "dist", "build", "out", ".venv", "venv", "__pycache__", ".next", ".idea", ".vs", "obj",
+    ".gradle", "generated",
+];
+const MAX_DEFINITION_FILE_BYTES: u64 = 1024 * 1024;
+const MAX_DEFINITION_HITS: usize = 50;
+
+/// `from` 이 속한 프로젝트 전체에서 `name` 을 선언·정의하는 줄을 찾는다.
+/// 언어 서버 없이 줄 단위 패턴으로 찾으므로 후보가 여럿일 수 있다. 같은 파일, 같은 폴더 순으로 앞에 둔다.
+pub fn find_definitions(
+    fs: &dyn FileSystemRepository,
+    settings: &dyn SettingsRepository,
+    from: &str,
+    name: &str,
+) -> Result<Vec<DefinitionHit>, AppError> {
+    if !is_identifier(name) {
+        return Ok(Vec::new());
+    }
+    let scoped = ensure_within_project(fs, settings, from)?;
+    let root = scoped.canonical_root.to_string_lossy().into_owned();
+    let mut files = Vec::new();
+    collect_code_files(&fs.list(&root)?, Path::new(&root), &mut files);
+
+    let from_dir = Path::new(from).parent().map(normalize);
+    let from_canonical = fs.canonicalize(from).ok();
+    let rank = |path: &str| {
+        let same_file = fs.canonicalize(path).ok() == from_canonical;
+        let same_dir = Path::new(path).parent().map(normalize) == from_dir;
+        (!same_file, !same_dir, path.to_lowercase())
+    };
+    files.sort_by_cached_key(|path| rank(path));
+
+    let mut hits = Vec::new();
+    for path in files {
+        let Ok(content) = fs.read_text(&path, MAX_DEFINITION_FILE_BYTES) else { continue };
+        if content.binary || content.truncated {
+            continue;
+        }
+        for (index, line) in content.text.lines().enumerate() {
+            if is_definition(line, name) {
+                hits.push(DefinitionHit { path: path.clone(), line: index as u32 + 1, text: line.trim().to_string() });
+                if hits.len() >= MAX_DEFINITION_HITS {
+                    return Ok(hits);
+                }
+            }
+        }
+    }
+    Ok(hits)
+}
+
+/// 루트 아래의 코드 파일. 건너뛸 폴더는 노드 이름이 아니라 루트 기준 경로 조각으로 본다 (목록이 평평해도 된다).
+fn collect_code_files(node: &crate::domain::entity::FsNode, root: &Path, out: &mut Vec<String>) {
+    match &node.children {
+        Some(children) => children.iter().for_each(|child| collect_code_files(child, root, out)),
+        None => {
+            let path = Path::new(&node.path);
+            let ext = path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase());
+            let in_skipped_dir = path
+                .strip_prefix(root)
+                .unwrap_or(path)
+                .components()
+                .any(|c| SKIPPED_DIRS.contains(&c.as_os_str().to_string_lossy().as_ref()));
+            if !in_skipped_dir && ext.is_some_and(|e| CODE_EXTENSIONS.contains(&e.as_str())) {
+                out.push(node.path.clone());
+            }
+        }
+    }
+}
+
+fn is_identifier(name: &str) -> bool {
+    !name.is_empty()
+        && !name.as_bytes()[0].is_ascii_digit()
+        && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'$')
+}
+
+fn is_identifier_byte(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'_' || b == b'$'
+}
+
+/// `NAME` 바로 앞에 오면 선언으로 보는 낱말.
+const DECLARATION_KEYWORDS: &[&str] = &[
+    "class", "struct", "enum", "interface", "trait", "type", "typedef", "union", "namespace", "module", "mod", "fn",
+    "function", "def", "func", "fun", "proc", "sub", "const", "static", "let", "var", "val", "object", "record",
+    "protocol", "extension", "actor", "macro", "macro_rules!", "impl", "define", "typealias", "async", "get", "set",
+    "delegate", "event", "local", "global", "my", "our", "alias", "pub", "@interface", "@implementation",
+    "@protocol", "@property", "#define", "%define",
+];
+/// 줄의 첫 낱말이 이것이면 `타입 NAME(` 꼴의 정의로 보지 않는다 (호출·반환 등).
+const NOT_DEFINITION_STARTS: &[&str] = &[
+    "return", "new", "await", "yield", "throw", "else", "in", "of", "as", "typeof", "instanceof", "delete", "void",
+    "case", "is", "not", "and", "or", "import", "from", "extends", "implements", "if", "while", "for", "switch",
+    "catch", "with", "elif", "unless", "until", "do", "try", "assert", "print", "echo", "use", "require", "include",
+    "goto", "break", "continue", "export", "sizeof", "co_await", "co_return", "co_yield", "emit", "raise",
+];
+
+/// 한 줄이 `name` 의 선언·정의로 보이는가. 언어 서버가 없으니 흔한 꼴만 잡는다:
+/// `키워드 NAME`, `impl … for NAME`, `타입 NAME(` / `타입 NAME =` / `타입 NAME;`, 줄머리의 `NAME(…) {` 메서드,
+/// 들여쓰기 없는 `NAME = …`.
+pub fn is_definition(line: &str, name: &str) -> bool {
+    let bytes = line.as_bytes();
+    let mut search = 0;
+    while let Some(found) = line[search..].find(name) {
+        let start = search + found;
+        let end = start + name.len();
+        search = start + 1;
+        let whole_word = !(start > 0 && is_identifier_byte(bytes[start - 1]))
+            && !(end < bytes.len() && is_identifier_byte(bytes[end]));
+        if !whole_word {
+            continue;
+        }
+        let separated = line[..start].ends_with(char::is_whitespace);
+        let before = line[..start].trim_end();
+        let after = line[end..].trim_start();
+        if before.ends_with('.') || before.ends_with("->") {
+            continue; // obj.name, ptr->name: 멤버 접근
+        }
+        let previous_word = before.rsplit(char::is_whitespace).next().unwrap_or("");
+        let previous_word = previous_word.split('<').next().unwrap_or(previous_word);
+        if DECLARATION_KEYWORDS.contains(&previous_word) || (previous_word == "for" && before.starts_with("impl")) {
+            return true;
+        }
+        if before.is_empty() {
+            if after.starts_with('(') && is_method_definition(after) {
+                return true;
+            }
+            if line.starts_with(name) && is_assignment(after) {
+                return true;
+            }
+            continue;
+        }
+        let declares = after.starts_with('(') || after.starts_with(';') || after.starts_with('{') || is_assignment(after);
+        if declares && is_typed_definition(before, separated) {
+            return true;
+        }
+    }
+    false
+}
+
+/// `= …` 이되 `==`, `=>` 가 아닌 것.
+fn is_assignment(after: &str) -> bool {
+    after.starts_with('=') && !after.starts_with("==") && !after.starts_with("=>")
+}
+
+/// 줄머리의 `foo(a, b) {` / `foo(a): T {`. 괄호가 이 줄에서 닫히고 그 뒤가 본문 `{` 로 이어져야 한다.
+/// `foo(bar, () => {` 같은 콜백 호출은 괄호가 닫히지 않아 걸러진다.
+fn is_method_definition(after: &str) -> bool {
+    let mut depth = 0usize;
+    for (index, c) in after.char_indices() {
+        match c {
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    let tail = after[index + 1..].trim();
+                    return tail.ends_with('{') && !tail.contains("=>") && (tail.starts_with('{') || tail.starts_with(':'));
+                }
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
+/// `static void Foo::bar(` / `private foo(` / `std::string name =` / Go 의 `func (r *T) Name(`.
+/// 앞쪽이 타입·한정자 낱말만으로 되어 있어야 한다 (`=`, `(`, `,` 가 끼면 식의 일부).
+fn is_typed_definition(before: &str, separated: bool) -> bool {
+    let first_word = before.split(|c: char| !is_identifier_byte(c as u8)).next().unwrap_or("");
+    if NOT_DEFINITION_STARTS.contains(&first_word) {
+        return false;
+    }
+    if before.starts_with("func ") || before.starts_with("func(") {
+        return true;
+    }
+    let type_like = before.chars().all(|c| is_identifier_byte(c as u8) || c.is_whitespace() || "<>*&:[]~".contains(c));
+    let qualified = before.ends_with("::");
+    // `Foo::bar(` 는 호출, `void Foo::bar(` 는 정의.
+    let ends_like_type = separated
+        || before.ends_with(|c: char| "*&>".contains(c))
+        || (qualified && before.split_whitespace().count() >= 2);
+    type_like && ends_like_type
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -511,5 +710,78 @@ mod tests {
         let settings = FakeSettings::with_project("/p", &[]);
         assert!(read_text(&fs, &settings, "/secret/a.txt").is_err());
         assert!(read_bytes(&fs, &settings, "/secret/a.bin").is_err());
+    }
+
+    #[test]
+    fn definition_lines_are_recognised_across_languages() {
+        let yes = [
+            ("export class Foo<T> {", "Foo"),
+            ("pub(crate) fn foo(a: u32) -> Bar {", "foo"),
+            ("impl<T> Trait for Foo<T> {", "Foo"),
+            ("def foo(self):", "foo"),
+            ("    private foo(a: string): void {", "foo"),
+            ("  foo(a) {", "foo"),
+            ("static void Foo::bar(int a)", "bar"),
+            ("int main(int argc, char** argv)", "main"),
+            ("std::vector<int> make(", "make"),
+            ("func (r *T) Name(x int) {", "Name"),
+            ("public int Count { get; set; }", "Count"),
+            ("const int MAX = 10;", "MAX"),
+            ("MAX = 10", "MAX"),
+            ("#define MAX 10", "MAX"),
+            ("    pub name: String,", "name"),
+            ("export const useFoo = create(", "useFoo"),
+            ("  async load() {", "load"),
+            ("macro_rules! foo {", "foo"),
+            ("type Foo = Bar;", "Foo"),
+        ];
+        for (line, name) in yes {
+            assert!(is_definition(line, name), "should match: {line}");
+        }
+        let no = [
+            ("return foo(1);", "foo"),
+            ("  foo(1);", "foo"),
+            ("  useEffect(() => {", "useEffect"),
+            ("let x = foo(1);", "foo"),
+            ("obj.foo(1) {", "foo"),
+            ("ptr->foo = 1;", "foo"),
+            ("Foo::bar();", "bar"),
+            ("new Foo(1)", "Foo"),
+            ("    result = compute()", "result"),
+            ("if foo == 1 {", "foo"),
+            ("fn foobar() {", "foo"),
+            ("class Foo {", "Fo"),
+            ("fn f() -> Foo {", "Foo"),
+            ("  foo(a, () => {", "foo"),
+        ];
+        for (line, name) in no {
+            assert!(!is_definition(line, name), "should not match: {line}");
+        }
+    }
+
+    #[test]
+    fn definitions_are_found_project_wide_with_the_current_file_first() {
+        let fs = FakeFs::with_dirs(&["/p"]);
+        let settings = FakeSettings::with_project("/p", &[]);
+        fs.add_text("/p/src/b.rs", "pub struct Foo;\nfn use_it(f: Foo) {}\n");
+        fs.add_text("/p/src/a.rs", "fn main() {\n    let foo = Foo::new();\n}\nstruct Foo {}\n");
+        fs.add_text("/p/node_modules/x/index.js", "class Foo {}\n");
+        fs.add_text("/p/notes.md", "class Foo\n");
+
+        let hits = find_definitions(&fs, &settings, "/p/src/a.rs", "Foo").unwrap();
+        let summary: Vec<_> = hits.iter().map(|h| (h.path.as_str(), h.line, h.text.as_str())).collect();
+        assert_eq!(summary, vec![("/p/src/a.rs", 4, "struct Foo {}"), ("/p/src/b.rs", 1, "pub struct Foo;")]);
+
+        assert!(find_definitions(&fs, &settings, "/p/src/a.rs", "no such").unwrap().is_empty());
+        assert!(find_definitions(&fs, &settings, "/secret/a.rs", "Foo").is_err());
+    }
+
+    #[test]
+    fn writing_is_limited_to_the_project() {
+        let fs = FakeFs::with_dirs(&["/p"]);
+        let settings = FakeSettings::with_project("/p", &[]);
+        write_text(&fs, &settings, "/p/a.txt", "hello").unwrap();
+        assert_eq!(fs.text_of("/p/a.txt").as_deref(), Some("hello"));
+        assert!(write_text(&fs, &settings, "/secret/a.txt", "x").is_err());
     }
 }

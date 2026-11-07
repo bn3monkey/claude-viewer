@@ -193,6 +193,7 @@ pub struct FakeFs {
     files: Mutex<HashSet<PathBuf>>,
     renames: Mutex<Vec<(PathBuf, PathBuf)>>,
     trashed: Mutex<Vec<String>>,
+    texts: Mutex<HashMap<PathBuf, String>>,
 }
 
 impl FakeFs {
@@ -203,6 +204,14 @@ impl FakeFs {
     }
     pub fn add_file(&self, path: &str) {
         self.files.lock().unwrap().insert(path.into());
+    }
+    /// 내용이 있는 파일. `read_text` 가 이 내용을 돌려준다.
+    pub fn add_text(&self, path: &str, text: &str) {
+        self.add_file(path);
+        self.texts.lock().unwrap().insert(path.into(), text.into());
+    }
+    pub fn text_of(&self, path: &str) -> Option<String> {
+        self.texts.lock().unwrap().get(Path::new(path)).cloned()
     }
     pub fn renames(&self) -> Vec<(PathBuf, PathBuf)> {
         self.renames.lock().unwrap().clone()
@@ -257,8 +266,13 @@ impl FileSystemRepository for FakeFs {
         self.dirs.lock().unwrap().insert(path.into());
         Ok(())
     }
-    fn read_text(&self, _path: &str, _max_bytes: u64) -> Result<TextContent, AppError> {
-        Ok(TextContent { text: String::new(), truncated: false, binary: false })
+    fn read_text(&self, path: &str, _max_bytes: u64) -> Result<TextContent, AppError> {
+        let text = self.texts.lock().unwrap().get(Path::new(path)).cloned().unwrap_or_default();
+        Ok(TextContent { text, truncated: false, binary: false })
+    }
+    fn write_text(&self, path: &Path, text: &str) -> Result<(), AppError> {
+        self.add_text(&path.to_string_lossy(), text);
+        Ok(())
     }
     fn read_bytes(&self, _path: &str) -> Result<Vec<u8>, AppError> {
         Ok(Vec::new())

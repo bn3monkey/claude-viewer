@@ -32,12 +32,15 @@ v0 설계([design_v0.md](design_v0.md))는 그대로 유효하다. 이 문서는
 | 설정 창 | 상단 "설정" 버튼. cmd / PowerShell / git bash / macOS Terminal 경로. 비우면 자동 감지(`ComSpec`, `WindowsPowerShell\v1.0`, `where git` 기준 `bin\bash.exe`, `/bin/zsh`) |
 | .exe 실행 | 트리에서 `.exe` 더블클릭 또는 우클릭 → 실행하기. 작업 폴더는 exe 가 있는 폴더, 콘솔 프로그램은 새 콘솔 창(`CREATE_NEW_CONSOLE`). 관리자 권한이 필요한 exe 는 `start` 로 다시 시도해 UAC 창을 띄운다. 한 번 클릭은 선택만 하고 뷰어 탭을 열지 않는다. 프로젝트 밖·다른 확장자는 백엔드에서 거부 |
 | 사용량 바 | 세션 상단. Context 토큰/창 크기(누르면 `/compact`), 세션 비용·출력 토큰, 5시간 창, 7일 창, 그 외 창(모델별 창이 오면 Fable 칸에 표시) |
+| 소스 편집 | 소스 탭 머리글의 "편집" → 그 자리에서 고치고 Ctrl+S(또는 "저장")로 저장, "편집 끝" 으로 돌아온다. `.md` 도 소스 탭에서 고친다(미리 보기는 읽기 전용). 새 편집기 의존성 없이 shiki 로 강조한 `pre` 위에 글자색이 투명한 `textarea` 를 겹친다(글꼴·여백 동일, 바깥 본문이 대신 스크롤). 타이핑은 textarea 가 바로 받고 강조는 150ms 쉰 뒤 다시 그린다. Tab/Shift+Tab 은 파일의 들여쓰기 단위, Enter 는 윗줄 들여쓰기 유지, 되돌리기는 브라우저 것. CRLF 파일은 저장할 때 CRLF 로 되돌린다. 저장 안 한 변경이 있는 동안은 파일 감시의 다시 읽기를 무시하고, 탭 이름에 ● 를 붙이며, 닫기·모드 전환·편집 끝에서 확인을 받는다. 잘린(5MB 초과) 파일과 바이너리는 편집 불가. 저장은 `viewer_write_text` 로, 프로젝트 밖은 거부 |
+| F12 / Ctrl+클릭 정의로 이동 | 언어 서버 없이 줄 단위 휴리스틱. 커서(편집 중) 또는 마지막 클릭(읽기 모드)의 식별자를 프로젝트 전체 코드 파일(`node_modules`·`target`·`dist` 등 제외, 파일당 1MB 까지)에서 찾는다. `키워드 NAME`(class/fn/def/struct/enum/const/impl…), `impl … for NAME`, `타입 NAME(`/`타입 NAME =`, 줄머리 `NAME(…) {` 메서드, `#define NAME`, 들여쓰기 없는 `NAME =` 을 정의로 본다. 같은 파일 → 같은 폴더 → 경로순으로 정렬하고 커서가 있는 줄은 뺀다. 하나면 바로 열고 여럿이면 머리글 아래 목록에서 고른다. 최대 50개 |
 
 ## 3. 레이어 추가
 
 - `domain/entity/git.rs`, `domain/repository/git_repository.rs`, `domain/usecase/git/`, `data/datasource/git_cli.rs`, `data/repository/git_repository_impl.rs`, `presentation/viewmodel/git_vm.rs`
 - `ChatEvent` 에 `PermissionRequest`, `Usage`, `RateLimit`, `Compacted` 추가. `Result` 에 `context_window`
 - `ViewerMode` 에 `Html`, `Diff`
+- `DefinitionHit` 엔티티, `FileSystemRepository::write_text`, 뷰어 명령 `viewer_write_text`·`viewer_find_definitions`
 
 ## 4. 확인한 제약
 

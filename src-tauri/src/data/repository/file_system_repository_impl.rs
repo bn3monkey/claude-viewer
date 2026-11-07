@@ -76,6 +76,10 @@ impl FileSystemRepository for FileSystemRepositoryImpl {
         fs::read(path).map_err(io)
     }
 
+    fn write_text(&self, path: &Path, text: &str) -> Result<(), AppError> {
+        fs::write(path, text).map_err(io)
+    }
+
     fn watch(&self, root: &str, on_change: Box<dyn Fn() + Send + Sync>) -> Result<WatchGuard, AppError> {
         let handle = watcher::watch(Path::new(root), Duration::from_millis(500), move |paths| {
             let relevant = paths.iter().any(|path| {

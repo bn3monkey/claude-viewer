@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import { X } from "lucide-react";
 import type { ViewerMode } from "../../generated/entity/ViewerMode";
+import { useTreeVM } from "../../viewmodel/useTreeVM";
 import { useViewerVM, type ViewerTab } from "../../viewmodel/useViewerVM";
 import { DiffView } from "./DiffView";
 import { FindBar } from "./FindBar";
@@ -28,9 +29,10 @@ const FINDABLE: ViewerMode[] = ["source", "markdown", "diff", "docx"];
 
 const TAB_SUFFIX: Partial<Record<ViewerMode, string>> = { markdown: " · 미리보기", html: " · 렌더링", diff: " · diff" };
 
-/** ⑤ File Viewer (읽기 전용) */
+/** ⑤ File Viewer. 소스 탭은 "편집" 을 누르면 그 자리에서 고치고 Ctrl+S 로 저장한다. F12 / Ctrl+클릭은 정의로 간다. */
 export function ViewerPanel() {
-  const { tabs, activeKey, activate, close, closeOthers, closeAll, switchMode } = useViewerVM();
+  const { tabs, activeKey, activate, close, closeOthers, closeAll, switchMode, startEditing, stopEditing, requestSave } =
+    useViewerVM();
   const active = tabs.find((t) => t.key === activeKey) ?? null;
   const [fitImage, setFitImage] = useState(true);
   const [menuTab, setMenuTab] = useState<string | null>(null);
@@ -76,6 +78,7 @@ export function ViewerPanel() {
                 onAuxClick={(e) => e.button === 1 && close(tab.key)}
                 onContextMenu={() => setMenuTab(tab.key)}
               >
+                {tab.dirty && <span className="dirty" title="저장하지 않은 변경">●</span>}
                 {tab.name}
                 {TAB_SUFFIX[tab.mode]}
                 <button
@@ -128,9 +131,27 @@ export function ViewerPanel() {
                 </span>
               )}
               <ModeLabel tab={active} onSwitch={(mode) => switchMode(active.key, mode)} />
-              {active.mode !== "terminal" && <span className="hint" style={{ marginLeft: 8 }}>읽기 전용</span>}
+              {active.mode === "source" &&
+                (active.editing ? (
+                  <>
+                    <button className="icon" title="Ctrl+S" disabled={!active.dirty} onClick={() => requestSave(active.key)}>
+                      저장
+                    </button>
+                    <button className="icon" onClick={() => stopEditing(active.key)}>
+                      편집 끝
+                    </button>
+                  </>
+                ) : (
+                  <button className="icon" title="이 자리에서 고친다. F12 / Ctrl+클릭은 정의로 이동" onClick={() => startEditing(active.key)}>
+                    편집
+                  </button>
+                ))}
+              {active.mode !== "terminal" && active.mode !== "source" && (
+                <span className="hint" style={{ marginLeft: 8 }}>읽기 전용</span>
+              )}
             </div>
           )}
+          <DefinitionPicker />
           {findOpen && active.mode !== "terminal" && (
             <FindBar
               container={body}
@@ -177,10 +198,51 @@ function ModeLabel({ tab, onSwitch }: { tab: ViewerTab; onSwitch: (mode: ViewerM
   );
 }
 
+/** F12 결과가 여럿일 때 고르는 목록. 머리글 아래에 떠 있고 Esc·바깥 클릭으로 닫힌다. */
+function DefinitionPicker() {
+  const { definitions, pickDefinition, dismissDefinitions } = useViewerVM();
+  const treeRoot = useTreeVM((s) => s.root);
+  const box = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!definitions) return;
+    box.current?.focus();
+    const onPointer = (e: PointerEvent) => {
+      if (!box.current?.contains(e.target as Node)) dismissDefinitions();
+    };
+    document.addEventListener("pointerdown", onPointer, true);
+    return () => document.removeEventListener("pointerdown", onPointer, true);
+  }, [definitions, dismissDefinitions]);
+
+  if (!definitions) return null;
+  const relative = (path: string) =>
+    treeRoot && path.startsWith(treeRoot) ? path.slice(treeRoot.length).replace(/^[\\/]/, "") : path;
+  return (
+    <div className="menu defs" ref={box} tabIndex={-1} onKeyDown={(e) => e.key === "Escape" && dismissDefinitions()}>
+      <div className="defs-head">
+        <span>
+          '{definitions.name}' 의 정의 {definitions.hits.length}곳
+        </span>
+        <button className="x" title="닫기" onClick={dismissDefinitions}>
+          <X size={12} />
+        </button>
+      </div>
+      {definitions.hits.map((hit) => (
+        <div key={`${hit.path}:${hit.line}`} className="it" onClick={() => pickDefinition(hit)}>
+          <span className="loc">
+            {relative(hit.path)}:{hit.line}
+          </span>
+          <span className="src">{hit.text}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function Body({ tab, fitImage }: { tab: ViewerTab; fitImage: boolean }) {
   switch (tab.mode) {
     case "source":
-      return <SourceView path={tab.path} line={tab.line} reveal={tab.reveal} />;
+      return <SourceView tab={tab} />;
     case "markdown":
       return <MarkdownView path={tab.path} />;
     case "html":

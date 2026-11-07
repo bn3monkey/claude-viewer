@@ -39,6 +39,16 @@ pub struct TextContent {
     pub binary: bool,
 }
 
+/// F12 로 찾은 선언·정의 후보. `line` 은 1부터, `text` 는 그 줄의 내용(앞뒤 공백 제거).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct DefinitionHit {
+    pub path: String,
+    pub line: u32,
+    pub text: String,
+}
+
 /// 대화·문서 속 링크가 가리키는 파일. `line` 은 `#L42`, `:42` 같은 줄 표시 (1부터).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]

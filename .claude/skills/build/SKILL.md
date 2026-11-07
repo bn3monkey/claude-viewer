@@ -8,13 +8,9 @@ description: claude_viewer 를 빌드·테스트하는 방법. 단일 exe 릴리
 ## 준비물
 
 - Node.js + npm (`npm install` 로 의존성 설치)
-- Rust stable (MSVC 툴체인). 이 머신에서는 scoop `rustup-msvc` 로 설치되어 있다.
-  - Bash 에서 cargo 가 PATH 에 없으면 먼저:
-    ```bash
-    export PATH="$HOME/scoop/apps/rustup-msvc/current/.cargo/bin:$PATH" \
-      CARGO_HOME="$HOME/scoop/persist/rustup-msvc/.cargo" \
-      RUSTUP_HOME="$HOME/scoop/persist/rustup-msvc/.rustup"
-    ```
+- Rust stable (MSVC 툴체인). 툴체인은 `$HOME/.rustup` 에, cargo 는 `$HOME/.cargo/bin` 에 있다 (rustup default = stable-x86_64-pc-windows-msvc).
+  - Bash 에서 cargo 가 PATH 에 없으면 먼저 `export PATH="$HOME/.cargo/bin:$PATH"`.
+  - scoop 의 `rustup-msvc` 경로(`$HOME/scoop/persist/rustup-msvc/.rustup`)를 `RUSTUP_HOME` 으로 주면 그 안에 툴체인이 없어 "rustup could not choose a version of cargo" 로 실패한다. 쓰지 말 것.
 - MSVC 링커: Visual Studio 18 Insiders 의 C++ 도구. `vswhere` 기본 조회로는 안 잡히지만 rustc 는 찾는다.
 - Tauri CLI 는 `@tauri-apps/cli` (devDependency) 로 `npx tauri` 를 쓴다.
 

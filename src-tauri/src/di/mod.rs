@@ -76,6 +76,8 @@ pub fn run() {
             viewer_vm::viewer_restore_tabs,
             viewer_vm::viewer_read_text,
             viewer_vm::viewer_read_bytes,
+            viewer_vm::viewer_write_text,
+            viewer_vm::viewer_find_definitions,
             viewer_vm::viewer_open_external,
             viewer_vm::viewer_open_url,
             git_vm::git_overview,

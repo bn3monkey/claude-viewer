@@ -2,7 +2,7 @@ use tauri::http;
 use tauri::ipc::Response;
 use tauri::{AppHandle, Manager, State};
 
-use crate::domain::entity::{AppError, LinkTarget, SavedTab, TextContent, ViewerMode};
+use crate::domain::entity::{AppError, DefinitionHit, LinkTarget, SavedTab, TextContent, ViewerMode};
 use crate::domain::usecase::viewer;
 use crate::presentation::state::AppState;
 
@@ -37,6 +37,22 @@ pub fn viewer_read_text(state: State<'_, AppState>, path: String) -> Result<Text
 #[tauri::command(async)]
 pub fn viewer_read_bytes(state: State<'_, AppState>, path: String) -> Result<Response, AppError> {
     viewer::read_bytes(&*state.fs, &*state.settings, &path).map(Response::new)
+}
+
+/// 뷰어에서 고친 텍스트를 저장한다.
+#[tauri::command(async)]
+pub fn viewer_write_text(state: State<'_, AppState>, path: String, text: String) -> Result<(), AppError> {
+    viewer::write_text(&*state.fs, &*state.settings, &path, &text)
+}
+
+/// F12: `from` 이 속한 프로젝트에서 `name` 의 선언·정의 후보.
+#[tauri::command(async)]
+pub fn viewer_find_definitions(
+    state: State<'_, AppState>,
+    from: String,
+    name: String,
+) -> Result<Vec<DefinitionHit>, AppError> {
+    viewer::find_definitions(&*state.fs, &*state.settings, &from, &name)
 }
 
 #[tauri::command(async)]

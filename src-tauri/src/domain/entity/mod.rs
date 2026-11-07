@@ -18,4 +18,4 @@ pub use fs_node::{FsKind, FsNode};
 pub use project::Project;
 pub use session::{Session, SessionState};
 pub use settings::{ProjectEntry, SavedTab, Settings};
-pub use viewer::{LinkTarget, TextContent, ViewerMode, ViewerRequest};
+pub use viewer::{DefinitionHit, LinkTarget, TextContent, ViewerMode, ViewerRequest};
