@@ -4,7 +4,6 @@ import { ConnectionBar } from "../features/connection/ConnectionBar";
 import { ProjectPanel } from "../features/projects/ProjectPanel";
 import { TreePanel } from "../features/tree/TreePanel";
 import { PullDialog } from "../features/tree/PullDialog";
-import { SubagentDialog } from "../features/session/SubagentDialog";
 import { startSubagentEvents } from "../viewmodel/useSubagentVM";
 import { SessionPanel } from "../features/session/SessionPanel";
 import { ViewerPanel } from "../features/viewer/ViewerPanel";
@@ -60,7 +59,6 @@ export function App() {
       <StatusBar />
       <PromptDialog />
       <PullDialog />
-      <SubagentDialog />
       <SettingsDialog />
       <Toasts />
     </div>

@@ -4,26 +4,25 @@ import type { ChatEvent } from "../generated/entity/ChatEvent";
 import type { SubagentRun } from "../generated/entity/SubagentRun";
 import { call } from "./invoke";
 
-type Viewing = { root: string; sessionId: string; agentId: string };
-
 type SubagentVM = {
   /** 세션별 서브에이전트. 세션을 열 때 읽고, 로그가 바뀌면 다시 읽는다. */
   runs: Record<string, SubagentRun[]>;
   /** 세션 id → 프로젝트 루트. 다시 읽을 때 쓴다. */
   roots: Record<string, string>;
-  /** 에이전트 id → 대화. 대화 보기를 연 것만. */
+  /** 에이전트 id → 대화. 탭을 연 것만. */
   logs: Record<string, ChatEvent[]>;
-  viewing: Viewing | null;
+  /** 세션 id → 보고 있는 서브에이전트 탭. 없으면 Main. */
+  active: Record<string, string>;
   load: (root: string, sessionId: string) => Promise<void>;
-  open: (sessionId: string, agentId: string) => void;
-  close: () => void;
+  /** 탭을 바꾼다. null 이면 Main. */
+  select: (sessionId: string, agentId: string | null) => void;
 };
 
 export const useSubagentVM = create<SubagentVM>((set, get) => ({
   runs: {},
   roots: {},
   logs: {},
-  viewing: null,
+  active: {},
 
   load: async (root, sessionId) => {
     set({ roots: { ...get().roots, [sessionId]: root } });
@@ -31,14 +30,12 @@ export const useSubagentVM = create<SubagentVM>((set, get) => ({
     if (runs) set({ runs: { ...get().runs, [sessionId]: runs } });
   },
 
-  open: (sessionId, agentId) => {
+  select: (sessionId, agentId) => {
+    const { [sessionId]: _, ...rest } = get().active;
+    set({ active: agentId ? { ...rest, [sessionId]: agentId } : rest });
     const root = get().roots[sessionId];
-    if (!root) return;
-    set({ viewing: { root, sessionId, agentId } });
-    void loadLog(root, sessionId, agentId);
+    if (agentId && root) void loadLog(root, sessionId, agentId);
   },
-
-  close: () => set({ viewing: null }),
 }));
 
 async function loadLog(root: string, sessionId: string, agentId: string) {
@@ -47,11 +44,11 @@ async function loadLog(root: string, sessionId: string, agentId: string) {
 }
 
 function refresh(sessionId: string) {
-  const { roots, runs, viewing, load } = useSubagentVM.getState();
+  const { roots, runs, active, load } = useSubagentVM.getState();
   const root = roots[sessionId];
   if (!root || !runs[sessionId]) return;
   void load(root, sessionId);
-  if (viewing?.sessionId === sessionId) void loadLog(viewing.root, sessionId, viewing.agentId);
+  if (active[sessionId]) void loadLog(root, sessionId, active[sessionId]);
 }
 
 /** 로그가 바뀐 세션을 다시 읽는다. 기록이 멈춘 에이전트도 "응답 없음" 으로 바뀌도록 실행 중인 세션은 가끔 다시 읽는다. */

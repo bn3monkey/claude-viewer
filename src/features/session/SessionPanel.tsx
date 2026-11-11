@@ -10,11 +10,12 @@ import { compactStep, summarizeUsage, useSessionVM } from "../../viewmodel/useSe
 import { useSubagentVM } from "../../viewmodel/useSubagentVM";
 import { useTreeVM } from "../../viewmodel/useTreeVM";
 import { LinkBase } from "../viewer/Markdown";
-import { SubagentStrip } from "./AgentCard";
+import { AgentTabs, SubagentSummary } from "./AgentTabs";
 import { ChatItem } from "./ChatItem";
 import { UsageBar } from "./UsageBar";
 
 const EMPTY: ChatEvent[] = [];
+const LOADING: ChatEvent[] = [];
 
 /** `--permission-mode` 선택지. null 은 CLI 기본값(매번 물어봄). */
 const PERMISSION_MODES: { value: string | null; label: string; hint: string }[] = [
@@ -42,6 +43,11 @@ export function SessionPanel() {
   const [sending, setSending] = useState(false);
 
   const loadSubagents = useSubagentVM((s) => s.load);
+  const pendingCount = useSessionVM((s) => (session ? (s.pending[session.id]?.length ?? 0) : 0));
+  // 서브에이전트 탭을 보고 있으면 그 대화를 보여 준다. 입력은 언제나 Main 으로 간다.
+  const tabId = useSubagentVM((s) => (session ? s.active[session.id] : undefined));
+  const tabRun = useSubagentVM((s) => (session && tabId ? s.runs[session.id]?.find((r) => r.agentId === tabId) : undefined));
+  const tabLog = useSubagentVM((s) => (tabId ? s.logs[tabId] : undefined)) ?? LOADING;
   useEffect(() => {
     if (session && project) ensureLoaded(project.root, session.id);
   }, [session?.id, project?.root, ensureLoaded]);
@@ -123,13 +129,24 @@ export function SessionPanel() {
         canCompact={idle && usage.contextTokens > 0}
         onCompact={runCompact}
       />
+      <AgentTabs sessionId={session.id} />
       <PanelGroup direction="vertical" autoSaveId="layout-session">
         <Panel defaultSize={75} minSize={20}>
           <div className="chat-wrap">
-            <SubagentStrip sessionId={session.id} />
             <LinkBase.Provider value={project.root}>
-              {/* 세션마다 새로 그려 맨 아래에서 시작한다. */}
-              <ChatList key={session.id} events={events} busy={session.busy} sessionId={session.id} />
+              {/* 세션·탭마다 새로 그려 맨 아래에서 시작한다. */}
+              {tabRun ? (
+                <>
+                  <SubagentSummary run={tabRun} />
+                  {tabLog === LOADING ? (
+                    <div className="empty">기록을 읽는 중…</div>
+                  ) : (
+                    <ChatList key={tabRun.agentId} events={tabLog} spinner={tabRun.running} sessionId={session.id} />
+                  )}
+                </>
+              ) : (
+                <ChatList key={session.id} events={events} spinner={session.busy && pendingCount === 0} sessionId={session.id} />
+              )}
             </LinkBase.Provider>
           </div>
         </Panel>
@@ -217,7 +234,9 @@ export function SessionPanel() {
             />
             <div className="actions">
               <span className="hint">
-                {runningElsewhere
+                {tabRun
+                  ? "서브에이전트 탭을 보는 중입니다. 메시지는 Main 에이전트에게 갑니다"
+                  : runningElsewhere
                   ? "다른 곳(VSCode, 터미널)에서 진행 중인 세션입니다. 끝난 뒤에 보낼 수 있습니다."
                   : session.busy
                     ? "응답 중에 보낸 메시지는 Claude 가 다음 단계에서 읽습니다 (모델·권한 변경은 다음 턴부터)"
@@ -238,13 +257,11 @@ export function SessionPanel() {
   );
 }
 
-function ChatList({ events, busy, sessionId }: { events: ChatEvent[]; busy: boolean; sessionId: string }) {
+function ChatList({ events, spinner, sessionId }: { events: ChatEvent[]; spinner: boolean; sessionId: string }) {
   const scroller = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
   const items = useMemo(() => events.filter((e) => e.kind !== "init" && e.kind !== "usage" && e.kind !== "rateLimit"), [events]);
-  const pendingCount = useSessionVM((s) => s.pending[sessionId]?.length ?? 0);
-  const showSpinner = busy && pendingCount === 0;
-  const count = items.length + (showSpinner ? 1 : 0);
+  const count = items.length + (spinner ? 1 : 0);
 
   const virtualizer = useVirtualizer({
     count,
