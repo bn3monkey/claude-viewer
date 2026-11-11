@@ -7,8 +7,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
 
-use super::stream_json::{decode_message, strip_injected_context};
-use crate::domain::entity::ChatEvent;
+use super::stream_json::{decode_message, strip_injected_context, summarize_tool_input};
+use crate::domain::entity::{ChatEvent, SubagentRun};
 use crate::domain::repository::SessionLogMeta;
 
 /// 마지막 쓰기 후 이만큼 조용하면 다른 클라이언트의 세션도 끝난 것으로 본다.
@@ -109,6 +109,15 @@ pub fn read_meta(path: &Path) -> Option<SessionLogMeta> {
 
 /// 대화 기록. 서브에이전트(sidechain)와 메타 메시지는 뺀다.
 pub fn read_events(path: &Path) -> std::io::Result<Vec<ChatEvent>> {
+    read_conversation(path, false)
+}
+
+/// 서브에이전트 로그의 대화. 줄마다 `isSidechain: true` 가 붙어 있다.
+pub fn read_subagent_events(path: &Path) -> std::io::Result<Vec<ChatEvent>> {
+    read_conversation(path, true)
+}
+
+fn read_conversation(path: &Path, sidechain: bool) -> std::io::Result<Vec<ChatEvent>> {
     let reader = BufReader::new(File::open(path)?);
     let mut events = Vec::new();
     for line in reader.lines() {
@@ -118,11 +127,99 @@ pub fn read_events(path: &Path) -> std::io::Result<Vec<ChatEvent>> {
         }
         let Ok(value) = serde_json::from_str::<Value>(&line) else { continue };
         let is_conversation = matches!(value["type"].as_str(), Some("user" | "assistant"));
-        if is_conversation && value["isSidechain"] != true && value["isMeta"] != true {
+        if is_conversation && (value["isSidechain"] == true) == sidechain && value["isMeta"] != true {
             events.extend(decode_message(&value));
         }
     }
     Ok(events)
+}
+
+/// `<세션 폴더>/<session-id>/subagents/agent-<id>.jsonl`
+pub fn subagent_file(session_dir: &Path, session_id: &str, agent_id: &str) -> PathBuf {
+    session_dir.join(session_id).join("subagents").join(format!("agent-{agent_id}.jsonl"))
+}
+
+pub fn subagent_files(session_dir: &Path, session_id: &str) -> Vec<PathBuf> {
+    session_files(&session_dir.join(session_id).join("subagents"))
+        .into_iter()
+        .filter(|path| path.file_stem().map_or(false, |stem| stem.to_string_lossy().starts_with("agent-")))
+        .collect()
+}
+
+/// 서브에이전트 로그와 옆의 `.meta.json` 으로 진행 상황을 만든다.
+pub fn read_subagent(path: &Path) -> Option<SubagentRun> {
+    let agent_id = path.file_stem()?.to_string_lossy().strip_prefix("agent-")?.to_string();
+    let file_meta = std::fs::metadata(path).ok()?;
+    let modified = file_meta.modified().ok()?;
+    let started = file_meta.created().unwrap_or(modified);
+    let meta: Value = std::fs::read_to_string(path.with_extension("meta.json"))
+        .ok()
+        .and_then(|text| serde_json::from_str(&text).ok())
+        .unwrap_or(Value::Null);
+
+    let mut tool_uses = 0u32;
+    // 한 응답이 블록마다 한 줄씩 같은 message.id 와 usage 로 기록되므로 id 별로 한 번만 센다.
+    let mut usage_by_message: Vec<(String, f64)> = Vec::new();
+    let mut last_activity = None;
+    let mut finished = false;
+    let reader = BufReader::new(File::open(path).ok()?);
+    for line in reader.lines().map_while(Result::ok) {
+        if !(line.contains("\"type\":\"user\"") || line.contains("\"type\":\"assistant\"")) {
+            continue;
+        }
+        let Ok(value) = serde_json::from_str::<Value>(&line) else { continue };
+        let message = &value["message"];
+        match value["type"].as_str() {
+            Some("assistant") => {
+                let blocks = message["content"].as_array().map(Vec::as_slice).unwrap_or_default();
+                for block in blocks.iter().filter(|b| b["type"] == "tool_use") {
+                    tool_uses += 1;
+                    let name = block["name"].as_str().unwrap_or_default();
+                    let summary = summarize_tool_input(&block["input"]);
+                    last_activity = Some(if summary.is_empty() { name.to_string() } else { format!("{name} · {summary}") });
+                }
+                // 도구 없이 글로 끝난 응답이 최종 보고다.
+                finished = blocks.iter().any(|b| b["type"] == "text")
+                    && !blocks.iter().any(|b| b["type"] == "tool_use")
+                    && message["stop_reason"].as_str() != Some("tool_use");
+                if let Some(output) = message["usage"]["output_tokens"].as_f64() {
+                    let id = message["id"].as_str().unwrap_or_default().to_string();
+                    match usage_by_message.iter_mut().find(|(seen, _)| !id.is_empty() && *seen == id) {
+                        Some(entry) => entry.1 = output,
+                        None => usage_by_message.push((id, output)),
+                    }
+                }
+            }
+            Some("user") if value["isMeta"] != true => {
+                // 도구 결과가 오면 다시 일하는 중이다.
+                if message["content"].as_array().map_or(false, |c| c.iter().any(|b| b["type"] == "tool_result")) {
+                    finished = false;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let recently_written = SystemTime::now()
+        .duration_since(modified)
+        .map_or(true, |elapsed| elapsed < RUNNING_QUIET_LIMIT);
+    let millis = |t: SystemTime| t.duration_since(UNIX_EPOCH).map_or(0.0, |d| d.as_millis() as f64);
+    let text = |key: &str| meta[key].as_str().unwrap_or_default().to_string();
+    Some(SubagentRun {
+        agent_id,
+        tool_use_id: text("toolUseId"),
+        agent_type: meta["agentType"].as_str().unwrap_or("agent").to_string(),
+        description: text("description"),
+        model: meta["model"].as_str().map(str::to_string),
+        background: meta["requestShape"] == "background",
+        tool_uses,
+        output_tokens: usage_by_message.iter().map(|(_, n)| n).sum(),
+        last_activity,
+        started_at: millis(started),
+        updated_at: millis(modified),
+        finished,
+        running: !finished && recently_written,
+    })
 }
 
 fn user_text(value: &Value) -> Option<String> {
@@ -230,6 +327,42 @@ mod tests {
 
         let (_dir, path) = write_log(&[USER, TOOL_USE, TOOL_RESULT, END]);
         assert!(!read_meta(&path).unwrap().looks_running);
+    }
+
+    #[test]
+    fn subagent_progress_comes_from_its_log_and_meta() {
+        let dir = tempfile::tempdir().unwrap();
+        let sub_dir = dir.path().join("s1").join("subagents");
+        std::fs::create_dir_all(&sub_dir).unwrap();
+        std::fs::write(
+            sub_dir.join("agent-a1.meta.json"),
+            r#"{"agentType":"Explore","description":"로그 형식 확인","toolUseId":"toolu_1","requestShape":"background","model":"haiku"}"#,
+        )
+        .unwrap();
+        let prompt = r#"{"type":"user","isSidechain":true,"message":{"role":"user","content":"파일을 봐"}}"#;
+        let think = r#"{"type":"assistant","isSidechain":true,"message":{"id":"m1","content":[{"type":"thinking","thinking":"음"}],"usage":{"output_tokens":30}}}"#;
+        let call = r#"{"type":"assistant","isSidechain":true,"message":{"id":"m1","content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"sleep 20"}}],"stop_reason":"tool_use","usage":{"output_tokens":30}}}"#;
+        let result = r#"{"type":"user","isSidechain":true,"message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"ok"}]}}"#;
+        let report = r#"{"type":"assistant","isSidechain":true,"message":{"id":"m2","content":[{"type":"text","text":"보고"}],"stop_reason":"end_turn","usage":{"output_tokens":5}}}"#;
+        let path = sub_dir.join("agent-a1.jsonl");
+        let write = |lines: &[&str]| std::fs::write(&path, lines.join("\n")).unwrap();
+
+        write(&[prompt, think, call, result]);
+        assert_eq!(subagent_files(dir.path(), "s1"), vec![path.clone()]);
+        let run = read_subagent(&path).unwrap();
+        assert_eq!((run.agent_id.as_str(), run.tool_use_id.as_str(), run.agent_type.as_str()), ("a1", "toolu_1", "Explore"));
+        assert!(run.background && run.running && !run.finished);
+        assert_eq!((run.tool_uses, run.output_tokens), (1, 30.0), "같은 응답의 usage 는 한 번만 센다");
+        assert_eq!(run.last_activity.as_deref(), Some("Bash · sleep 20"));
+
+        write(&[prompt, think, call, result, report]);
+        let run = read_subagent(&path).unwrap();
+        assert!(run.finished && !run.running);
+        assert_eq!(run.output_tokens, 35.0);
+
+        let events = read_subagent_events(&path).unwrap();
+        assert_eq!(events.first(), Some(&ChatEvent::User { text: "파일을 봐".into() }));
+        assert!(events.contains(&ChatEvent::AssistantText { text: "보고".into() }));
     }
 
     #[test]

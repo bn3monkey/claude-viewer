@@ -87,10 +87,19 @@ impl SessionRepository for FakeSessions {
     fn read_log(&self, _root: &str, _session_id: &str) -> Result<Vec<ChatEvent>, AppError> {
         Ok(Vec::new())
     }
+    fn subagents(&self, _root: &str, _session_id: &str) -> Result<Vec<crate::domain::entity::SubagentRun>, AppError> {
+        Ok(Vec::new())
+    }
+    fn read_subagent_log(&self, _root: &str, _session_id: &str, _agent_id: &str) -> Result<Vec<ChatEvent>, AppError> {
+        Ok(Vec::new())
+    }
     fn owns_session_dir(&self, _root: &str, _dir_name: &str) -> bool {
         false
     }
-    fn watch(&self, _on_change: Box<dyn Fn(Vec<String>) + Send + Sync>) -> Result<WatchGuard, AppError> {
+    fn watch(
+        &self,
+        _on_change: Box<dyn Fn(crate::domain::repository::SessionLogChange) + Send + Sync>,
+    ) -> Result<WatchGuard, AppError> {
         Ok(Box::new(()))
     }
 }

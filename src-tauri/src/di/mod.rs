@@ -54,6 +54,8 @@ pub fn run() {
             session_vm::session_start,
             session_vm::session_resume,
             session_vm::session_read_log,
+            session_vm::session_subagents,
+            session_vm::session_read_subagent_log,
             session_vm::session_send_message,
             session_vm::session_compact,
             session_vm::session_respond_permission,

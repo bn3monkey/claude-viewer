@@ -1,6 +1,6 @@
 use tauri::{AppHandle, Emitter, Manager, State};
 
-use super::EVENT_PROJECT_CHANGED;
+use super::{EVENT_PROJECT_CHANGED, EVENT_SUBAGENT_CHANGED};
 use crate::domain::entity::{AppError, Project};
 use crate::domain::usecase::{project, session};
 use crate::presentation::state::AppState;
@@ -31,10 +31,13 @@ pub fn allow_assets(app: &AppHandle, root: &str) {
 pub fn start_session_watch(app: &AppHandle) {
     let state = app.state::<AppState>();
     let handle = app.clone();
-    let watch = state.sessions.watch(Box::new(move |dirs| {
+    let watch = state.sessions.watch(Box::new(move |change| {
         let state = handle.state::<AppState>();
-        for root in session::projects_of_session_dirs(&*state.settings, &*state.sessions, &dirs) {
+        for root in session::projects_of_session_dirs(&*state.settings, &*state.sessions, &change.dirs) {
             emit_project(&handle, &root);
+        }
+        for session_id in change.subagent_sessions {
+            let _ = handle.emit(EVENT_SUBAGENT_CHANGED, session_id);
         }
     }));
     match watch {

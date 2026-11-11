@@ -2,7 +2,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 use super::project_vm::emit_project;
 use super::{session_event_name, EVENT_VIEWER_OPEN};
-use crate::domain::entity::{AppError, ChatEvent, Session};
+use crate::domain::entity::{AppError, ChatEvent, Session, SubagentRun};
 use crate::domain::usecase::session::{self, SendMessage};
 use crate::domain::usecase::viewer;
 use crate::presentation::state::AppState;
@@ -29,6 +29,21 @@ pub fn session_resume(app: AppHandle, state: State<'_, AppState>, root: String, 
 #[tauri::command(async)]
 pub fn session_read_log(state: State<'_, AppState>, root: String, id: String) -> Result<Vec<ChatEvent>, AppError> {
     session::read_log(&*state.sessions, &root, &id)
+}
+
+#[tauri::command(async)]
+pub fn session_subagents(state: State<'_, AppState>, root: String, id: String) -> Result<Vec<SubagentRun>, AppError> {
+    session::list_subagents(&*state.sessions, &root, &id)
+}
+
+#[tauri::command(async)]
+pub fn session_read_subagent_log(
+    state: State<'_, AppState>,
+    root: String,
+    id: String,
+    agent_id: String,
+) -> Result<Vec<ChatEvent>, AppError> {
+    session::read_subagent_log(&*state.sessions, &root, &id, &agent_id)
 }
 
 #[tauri::command(async)]

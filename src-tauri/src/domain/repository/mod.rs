@@ -13,7 +13,7 @@ pub use claude_process_repository::{ClaudeProcessRepository, ProcessStatus, Sess
 pub use clipboard_repository::ClipboardRepository;
 pub use file_system_repository::FileSystemRepository;
 pub use git_repository::GitRepository;
-pub use session_repository::{SessionLogMeta, SessionRepository};
+pub use session_repository::{SessionLogChange, SessionLogMeta, SessionRepository};
 pub use settings_repository::SettingsRepository;
 pub use shell_repository::ShellRepository;
 pub use terminal_repository::{TerminalOutput, TerminalRepository, TerminalSpec};

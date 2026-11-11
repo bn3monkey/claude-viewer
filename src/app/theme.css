@@ -80,6 +80,27 @@ input:focus, textarea:focus { border-color: var(--accent); }
 .msg.assistant { align-self: flex-start; background: var(--bg3); }
 .msg.assistant > :first-child { margin-top: 0; } .msg.assistant > :last-child { margin-bottom: 0; }
 .msg.tool { align-self: flex-start; background: #20261f; border-left: 3px solid var(--green); font-family: var(--mono); font-size: 12px; color: #b9c6b5; padding: 4px 10px; border-radius: 4px; white-space: pre-wrap; max-width: 100%; }
+.msg.agent { align-self: stretch; max-width: 100%; background: #1f2430; border-left: 3px solid var(--accent); border-radius: 4px; padding: 6px 10px; display: flex; flex-direction: column; gap: 3px; font-size: 12px; }
+.msg.agent.done { border-left-color: var(--green); }
+.msg.agent.stalled { border-left-color: var(--yellow); }
+.msg.agent .ahead { display: flex; gap: 8px; align-items: center; min-width: 0; }
+.msg.agent .adesc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.msg.agent .ahead button { flex: none; }
+.astatus { flex: none; color: var(--accent); }
+.done > .ahead .astatus, .astatus.done { color: var(--green); }
+.stalled > .ahead .astatus, .astatus.stalled { color: var(--yellow); }
+.running .astatus, .astatus.running, .agent-strip .astatus { animation: agent-pulse 1.2s ease-in-out infinite; }
+@keyframes agent-pulse { 50% { opacity: .35; } }
+.astats { color: var(--fg2); }
+.alast { font-family: var(--mono); color: #b9c6b5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-wrap { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.chat-wrap > .chat { flex: 1; height: auto; }
+.agent-strip { display: flex; gap: 6px; align-items: center; padding: 4px 12px; border-bottom: 1px solid var(--line); overflow-x: auto; flex: none; font-size: 12px; }
+.agent-strip button { flex: none; max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-strip .astatus { color: var(--accent); }
+.subagent-dialog { width: 860px; display: flex; flex-direction: column; max-height: 86vh; }
+.subagent-dialog .subagent-stats { padding: 6px 16px; border-bottom: 1px solid var(--line); font-size: 12px; }
+.subagent-dialog .subagent-chat { height: 64vh; padding: 6px 0; }
 .msg.tool.error { border-left-color: var(--red); color: #e0b4b4; background: #2a1f1f; }
 .msg.tool summary { cursor: pointer; }
 .msg.thinking { align-self: flex-start; color: var(--fg2); font-style: italic; white-space: pre-wrap; padding: 2px 4px; }

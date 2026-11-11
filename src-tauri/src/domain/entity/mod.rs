@@ -6,6 +6,7 @@ pub mod git;
 pub mod project;
 pub mod session;
 pub mod settings;
+pub mod subagent;
 pub mod terminal;
 pub mod viewer;
 
@@ -18,4 +19,5 @@ pub use fs_node::{FsKind, FsNode};
 pub use project::Project;
 pub use session::{Session, SessionState};
 pub use settings::{ProjectEntry, SavedTab, Settings};
+pub use subagent::SubagentRun;
 pub use viewer::{DefinitionHit, LinkTarget, TextContent, ViewerMode, ViewerRequest};

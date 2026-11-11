@@ -175,10 +175,10 @@ pub fn decode_message(value: &Value) -> Vec<ChatEvent> {
         .then(|| value["message"]["usage"].as_object())
         .flatten()
         .map(|u| ChatEvent::Usage {
-            input_tokens: u["input_tokens"].as_f64().unwrap_or(0.0),
-            cache_read_tokens: u["cache_read_input_tokens"].as_f64().unwrap_or(0.0),
-            cache_creation_tokens: u["cache_creation_input_tokens"].as_f64().unwrap_or(0.0),
-            output_tokens: u["output_tokens"].as_f64().unwrap_or(0.0),
+            input_tokens: u.get("input_tokens").and_then(Value::as_f64).unwrap_or(0.0),
+            cache_read_tokens: u.get("cache_read_input_tokens").and_then(Value::as_f64).unwrap_or(0.0),
+            cache_creation_tokens: u.get("cache_creation_input_tokens").and_then(Value::as_f64).unwrap_or(0.0),
+            output_tokens: u.get("output_tokens").and_then(Value::as_f64).unwrap_or(0.0),
         });
     blocks
         .iter()
@@ -238,7 +238,7 @@ pub fn strip_injected_context(text: &str) -> String {
 }
 
 /// 도구 호출을 한 줄로 요약한다. 파일 경로나 명령처럼 사람이 알아볼 값을 우선한다.
-fn summarize_tool_input(input: &Value) -> String {
+pub fn summarize_tool_input(input: &Value) -> String {
     const KEYS: [&str; 8] =
         ["file_path", "command", "pattern", "path", "url", "query", "description", "prompt"];
     let summary = KEYS

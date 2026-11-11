@@ -2,6 +2,7 @@ import { memo, useState } from "react";
 import type { ChatEvent } from "../../generated/entity/ChatEvent";
 import { useSessionVM } from "../../viewmodel/useSessionVM";
 import { Markdown } from "../viewer/Markdown";
+import { AgentCard, isAgentTool } from "./AgentCard";
 
 const seconds = (ms: number) => `${(ms / 1000).toFixed(1)}s`;
 
@@ -18,6 +19,7 @@ export const ChatItem = memo(function ChatItem({ event, sessionId }: { event: Ch
     case "thinking":
       return <div className="msg thinking">{event.text}</div>;
     case "toolUse":
+      if (isAgentTool(event.name)) return <AgentCard event={event} sessionId={sessionId} />;
       return (
         <div className="msg tool">
           ▶ {event.name} {event.summary}

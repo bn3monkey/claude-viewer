@@ -7,8 +7,10 @@ import type { ChatEvent } from "../../generated/entity/ChatEvent";
 import { useConnectionVM } from "../../viewmodel/useConnectionVM";
 import { findSession, useProjectVM } from "../../viewmodel/useProjectVM";
 import { compactStep, summarizeUsage, useSessionVM } from "../../viewmodel/useSessionVM";
+import { useSubagentVM } from "../../viewmodel/useSubagentVM";
 import { useTreeVM } from "../../viewmodel/useTreeVM";
 import { LinkBase } from "../viewer/Markdown";
+import { SubagentStrip } from "./AgentCard";
 import { ChatItem } from "./ChatItem";
 import { UsageBar } from "./UsageBar";
 
@@ -39,9 +41,14 @@ export function SessionPanel() {
   const setDraft = useSessionVM((s) => s.setDraft);
   const [sending, setSending] = useState(false);
 
+  const loadSubagents = useSubagentVM((s) => s.load);
   useEffect(() => {
     if (session && project) ensureLoaded(project.root, session.id);
   }, [session?.id, project?.root, ensureLoaded]);
+  // 서브에이전트는 메인 로그가 그대로여도 따로 기록되므로, 메인 로그가 바뀔 때도 다시 읽는다.
+  useEffect(() => {
+    if (session && project) void loadSubagents(project.root, session.id);
+  }, [session?.id, project?.root, session?.updatedAt, loadSubagents]);
 
   const currentModel = model ?? settings?.selectedModel ?? settings?.models[0] ?? "";
   const currentPermission = permissionMode === undefined ? (settings?.permissionMode ?? null) : permissionMode;
@@ -118,10 +125,13 @@ export function SessionPanel() {
       />
       <PanelGroup direction="vertical" autoSaveId="layout-session">
         <Panel defaultSize={75} minSize={20}>
-          <LinkBase.Provider value={project.root}>
-            {/* 세션마다 새로 그려 맨 아래에서 시작한다. */}
-            <ChatList key={session.id} events={events} busy={session.busy} sessionId={session.id} />
-          </LinkBase.Provider>
+          <div className="chat-wrap">
+            <SubagentStrip sessionId={session.id} />
+            <LinkBase.Provider value={project.root}>
+              {/* 세션마다 새로 그려 맨 아래에서 시작한다. */}
+              <ChatList key={session.id} events={events} busy={session.busy} sessionId={session.id} />
+            </LinkBase.Provider>
+          </div>
         </Panel>
         <PanelResizeHandle className="resize-v" />
         <Panel defaultSize={25} minSize={12}>

@@ -2,7 +2,7 @@ use std::sync::mpsc::Receiver;
 
 use super::project::{ensure_within_project, to_session};
 use super::viewer::VIEWER_SYSTEM_PROMPT;
-use crate::domain::entity::{AppError, ChatEvent, Session};
+use crate::domain::entity::{AppError, ChatEvent, Session, SubagentRun};
 use crate::domain::repository::{
     ClaudeProcessRepository, FileSystemRepository, SessionRepository, SessionStart, SettingsRepository,
     SpawnSpec,
@@ -192,6 +192,34 @@ pub fn read_log(
     id: &str,
 ) -> Result<Vec<ChatEvent>, AppError> {
     sessions.read_log(root, id)
+}
+
+/// 세션이 띄운 서브에이전트의 진행 상황.
+pub fn list_subagents(sessions: &dyn SessionRepository, root: &str, id: &str) -> Result<Vec<SubagentRun>, AppError> {
+    ensure_log_id(id)?;
+    sessions.subagents(root, id)
+}
+
+/// 서브에이전트 하나의 대화 전체.
+pub fn read_subagent_log(
+    sessions: &dyn SessionRepository,
+    root: &str,
+    id: &str,
+    agent_id: &str,
+) -> Result<Vec<ChatEvent>, AppError> {
+    ensure_log_id(id)?;
+    ensure_log_id(agent_id)?;
+    sessions.read_subagent_log(root, id, agent_id)
+}
+
+/// 로그 파일 이름에 들어가는 id. 경로 구분자나 `..` 로 다른 파일을 읽지 못하게 한다.
+fn ensure_log_id(id: &str) -> Result<(), AppError> {
+    let valid = !id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+    if valid {
+        Ok(())
+    } else {
+        Err(AppError::InvalidPath(format!("잘못된 id 입니다: {id}")))
+    }
 }
 
 pub fn subscribe(process: &dyn ClaudeProcessRepository) -> Receiver<(String, ChatEvent)> {
@@ -415,6 +443,17 @@ mod tests {
         save_draft(&world.settings, "s", "보내지 않은 글").unwrap();
         close_session(&world.settings, &world.process, "/p", "s").unwrap();
         assert!(world.settings.load().drafts.is_empty());
+    }
+
+    #[test]
+    fn subagent_ids_cannot_escape_the_log_folder() {
+        let world = World::new();
+        assert!(list_subagents(&world.sessions, "/p", "abc-123").is_ok());
+        assert!(read_subagent_log(&world.sessions, "/p", "abc", "a8975cb1c6765f299").is_ok());
+        for bad in ["", "..", "../x", "a/b", "a\\b"] {
+            assert!(list_subagents(&world.sessions, "/p", bad).is_err(), "{bad}");
+            assert!(read_subagent_log(&world.sessions, "/p", "abc", bad).is_err(), "{bad}");
+        }
     }
 
     #[test]

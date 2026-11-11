@@ -11,6 +11,8 @@ pub mod viewer_vm;
 pub const EVENT_PROJECT_CHANGED: &str = "project://changed";
 pub const EVENT_TREE_CHANGED: &str = "tree://changed";
 pub const EVENT_VIEWER_OPEN: &str = "viewer://open";
+/// 서브에이전트 로그가 바뀐 세션 id 를 보낸다.
+pub const EVENT_SUBAGENT_CHANGED: &str = "subagent://changed";
 
 pub fn session_event_name(session_id: &str) -> String {
     format!("session://event/{session_id}")
