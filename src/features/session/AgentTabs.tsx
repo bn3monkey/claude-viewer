@@ -3,6 +3,21 @@ import type { SubagentRun } from "../../generated/entity/SubagentRun";
 import { formatElapsed, formatTokens, STATUS_LABEL, statusOf, useSubagentVM } from "../../viewmodel/useSubagentVM";
 
 const EMPTY: SubagentRun[] = [];
+/** 기록이 멈춘 지 이만큼 지난 미완료 에이전트는 죽은 것으로 보고 탭에서 뺀다. */
+const STALLED_TTL_MS = 10 * 60_000;
+
+/**
+ * 탭에 둘 에이전트. 끝난 것은 빼되, 지금 보고 있는 탭은 다른 탭으로 옮길 때까지 남긴다.
+ * 로그 파일은 Claude Code 가 그대로 두므로 이 거르기가 없으면 앱을 다시 켤 때마다 옛 탭이 쌓인다.
+ */
+function visibleRuns(runs: SubagentRun[], active: string | null) {
+  const now = Date.now();
+  return runs.filter((run) => {
+    if (run.agentId === active) return true;
+    const status = statusOf(run);
+    return status === "running" || (status === "stalled" && now - run.updatedAt < STALLED_TTL_MS);
+  });
+}
 
 /** 사용량 밑의 얇은 탭 줄. Main 과, 이 세션이 띄운 서브에이전트들. */
 export function AgentTabs({ sessionId }: { sessionId: string }) {
@@ -14,7 +29,7 @@ export function AgentTabs({ sessionId }: { sessionId: string }) {
       <button role="tab" aria-selected={active === null} className={`atab${active === null ? " on" : ""}`} onClick={() => select(sessionId, null)}>
         Main
       </button>
-      {runs.map((run) => {
+      {visibleRuns(runs, active).map((run) => {
         const status = statusOf(run);
         const on = active === run.agentId;
         return (
