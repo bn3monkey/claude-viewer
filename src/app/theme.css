@@ -292,8 +292,35 @@ input:focus, textarea:focus { border-color: var(--accent); }
 .viewer .vbody.frame { overflow: hidden; background: #fff; }
 .html-frame { width: 100%; height: 100%; border: 0; display: block; background: #fff; }
 .md a.web-link { cursor: pointer; }
-.code.diff pre.plain .line.add { background: rgba(78, 201, 122, .15); }
-.code.diff pre.plain .line.del { background: rgba(241, 76, 76, .15); }
+/* diff: VS Code Dark+ 의 diffEditor 색을 따른다 */
+.dview { height: 100%; display: flex; flex-direction: column; min-height: 0; background: #1e1e1e; }
+.dtoolbar { flex: none; display: flex; align-items: center; gap: 6px; padding: 3px 8px; border-bottom: 1px solid var(--line); background: var(--bg2); font-size: 12px; }
+.dtoolbar .dstat { font: 12px var(--mono); }
+.dtoolbar .dstat.add { color: #81b88b; } .dtoolbar .dstat.del { color: #c74e39; }
+.dtoolbar .dsep { width: 1px; height: 14px; background: var(--line); }
+.dtoolbar button.icon { padding: 2px 5px; display: inline-flex; }
+.dtoolbar button.on { border-color: var(--accent); color: var(--accent); }
+.dmain { flex: 1; display: flex; min-height: 0; }
+.dscroll { flex: 1; overflow: auto; min-width: 0; }
+.druler { flex: none; width: 12px; position: relative; border-left: 1px solid var(--line); background: #1b1b1b; cursor: pointer; }
+.dmark { position: absolute; left: 2px; right: 2px; min-height: 2px; }
+.dmark.add { background: #587c0c; } .dmark.del { background: #94151b; } .dmark.mod { background: #1b81a8; }
+.dtable { width: 100%; border-collapse: collapse; table-layout: fixed; font: 12px/19px var(--mono); tab-size: 4; }
+.dtable col.dnum { width: 52px; } .dtable col.dsign { width: 18px; }
+.dtable td { padding: 0; vertical-align: top; }
+.dtable .dno { color: #6e7681; text-align: right; padding-right: 10px; user-select: none; }
+.dtable .dsigncell { color: #8b949e; text-align: center; user-select: none; }
+.dtable .dcode { padding-left: 6px; padding-right: 8px; white-space: pre-wrap; overflow-wrap: anywhere; color: #d4d4d4; }
+.dtable.side .dcode:nth-child(2) { border-right: 1px solid var(--line); }
+.dtable .add { background: rgba(155, 185, 85, .2); }
+.dtable .del { background: rgba(255, 0, 0, .2); }
+.dtable .dno.add, .dtable .dsigncell.add { background: rgba(155, 185, 85, .25); color: #b5cea8; }
+.dtable .dno.del, .dtable .dsigncell.del { background: rgba(255, 0, 0, .25); color: #f48771; }
+.dtable .add .dword { background: rgba(156, 204, 44, .38); }
+.dtable .del .dword { background: rgba(255, 0, 0, .4); }
+.dtable .filler { background: repeating-linear-gradient(-45deg, transparent 0 5px, rgba(204, 204, 204, .07) 5px 7px); }
+.dtable .dhunk td { background: rgba(78, 140, 255, .1); color: #8b9bb4; padding: 2px 12px; border-top: 1px solid rgba(78, 140, 255, .18); border-bottom: 1px solid rgba(78, 140, 255, .18); font-size: 11px; }
+.dtable .dhunk .dsection { margin-left: 14px; color: #9cdcfe; }
 
 /* 커밋 목록 */
 .git-commits .row { gap: 8px; }

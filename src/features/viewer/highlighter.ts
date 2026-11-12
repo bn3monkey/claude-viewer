@@ -97,15 +97,32 @@ export function highlightFence(code: string, tag: string): Promise<string | null
   return highlightLanguage(code, languageOfFence(tag));
 }
 
-async function highlightLanguage(code: string, lang: string | null): Promise<string | null> {
-  if (!lang) return null;
+function getHighlighter() {
   highlighter ??= createHighlighterCore({
     themes: [import("@shikijs/themes/dark-plus")],
     langs: [],
     engine: createJavaScriptRegexEngine(),
   });
-  const h = await highlighter;
+  return highlighter;
+}
+
+async function highlightLanguage(code: string, lang: string | null): Promise<string | null> {
+  if (!lang) return null;
+  const h = await getHighlighter();
   const id = await loadLanguage(h, lang);
   if (!id) return null;
   return h.codeToHtml(code, { lang: id, theme: "dark-plus" });
+}
+
+/** 색을 입힌 조각. fontStyle 은 shiki 의 비트 (1 기울임, 2 굵게, 4 밑줄). */
+export type CodeToken = { content: string; color?: string; fontStyle?: number };
+
+/** 줄마다 색 조각으로 나눈다. diff 처럼 HTML 이 아니라 직접 그려야 할 때 쓴다. 모르는 언어면 null. */
+export async function tokenizeLines(code: string, path: string): Promise<CodeToken[][] | null> {
+  const lang = languageOf(path);
+  if (!lang) return null;
+  const h = await getHighlighter();
+  const id = await loadLanguage(h, lang);
+  if (!id) return null;
+  return h.codeToTokens(code, { lang: id, theme: "dark-plus" }).tokens;
 }
