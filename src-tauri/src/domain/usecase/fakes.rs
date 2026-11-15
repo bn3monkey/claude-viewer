@@ -353,4 +353,7 @@ impl ClipboardRepository for FakeClipboard {
         self.0.lock().unwrap().push(text.into());
         Ok(())
     }
+    fn read_text(&self) -> Result<String, AppError> {
+        Ok(self.0.lock().unwrap().last().cloned().unwrap_or_default())
+    }
 }

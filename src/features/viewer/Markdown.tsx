@@ -6,10 +6,13 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import type { Element, ElementContent } from "hast";
 import { call } from "../../viewmodel/invoke";
 import { CodeBlock } from "./CodeBlock";
+import type { OpenTarget } from "../../viewmodel/useViewerVM";
 import { activateLink, LinkMenu } from "./LinkMenu";
 
 /** 링크의 상대 경로 기준 폴더. 세션 대화는 프로젝트 루트를 넣는다. */
 export const LinkBase = createContext<string | null>(null);
+/** 링크를 어느 분할에 열지. 세션 대화는 "left", 뷰어 안 미리보기는 기본값 "focused". */
+export const LinkOpenTarget = createContext<OpenTarget>("focused");
 
 // `D:/a.rs`, `file:///…` 링크가 지워지지 않게 href 프로토콜 제한을 푼다.
 // 링크는 href 없이 그리고 클릭을 직접 처리하므로 javascript: 같은 값이 실행되지 않는다.
@@ -24,6 +27,7 @@ const WEB_URL = /^https?:\/\//i;
 /** 세션 대화 출력과 .md 미리보기 공용. baseDir 이 있으면 상대 경로 이미지·링크를 그 폴더 기준으로 읽는다. */
 export const Markdown = memo(function Markdown({ text, baseDir }: { text: string; baseDir?: string }) {
   const contextBase = useContext(LinkBase);
+  const where = useContext(LinkOpenTarget);
   const linkBase = baseDir ?? contextBase;
   const isFileLink = (href: string | undefined): href is string =>
     !!href && !!linkBase && !href.startsWith("#") && (!URL.test(href) || /^file:/i.test(href) || /^[A-Za-z]:[\\/]/.test(href));
@@ -33,8 +37,8 @@ export const Markdown = memo(function Markdown({ text, baseDir }: { text: string
     // http(s) 주소는 기본 브라우저로 연다. 그 밖의 스킴은 앱 화면이 바뀌지 않게 주소만 보여 준다.
     a: ({ children, href }) =>
       isFileLink(href) ? (
-        <LinkMenu baseDir={linkBase!} href={href}>
-          <a className="file-link" title={`뷰어에서 열기: ${href}`} onClick={() => activateLink(linkBase!, href)}>
+        <LinkMenu baseDir={linkBase!} href={href} where={where}>
+          <a className="file-link" title={`뷰어에서 열기: ${href}`} onClick={() => activateLink(linkBase!, href, where)}>
             {children}
           </a>
         </LinkMenu>
@@ -49,8 +53,8 @@ export const Markdown = memo(function Markdown({ text, baseDir }: { text: string
       const text = typeof children === "string" ? children : null;
       if (!className && text && linkBase && CODE_PATH.test(text)) {
         return (
-          <LinkMenu baseDir={linkBase} href={text}>
-            <code className="file-link" title="뷰어에서 열기" onClick={() => activateLink(linkBase, text)}>
+          <LinkMenu baseDir={linkBase} href={text} where={where}>
+            <code className="file-link" title="뷰어에서 열기" onClick={() => activateLink(linkBase, text, where)}>
               {text}
             </code>
           </LinkMenu>

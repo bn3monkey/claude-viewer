@@ -50,6 +50,7 @@ export function attachTerminal(id: string, sink: Sink) {
 
 export function disposeTerminal(id: string) {
   const buffer = buffers.get(id);
+  if (!buffer) return;
   buffer?.unlisten.forEach((u) => u.then((f) => f()));
   buffers.delete(id);
 }

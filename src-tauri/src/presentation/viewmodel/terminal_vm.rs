@@ -53,6 +53,18 @@ pub fn terminal_resize(state: State<'_, AppState>, id: String, cols: u16, rows: 
     state.terminals.resize(&id, cols, rows)
 }
 
+/// 터미널 붙여넣기. WebView 의 paste 이벤트는 xterm 의 숨은 입력란까지 오지 않을 수 있어 클립보드를 직접 읽는다.
+#[tauri::command(async)]
+pub fn terminal_paste(state: State<'_, AppState>) -> Result<String, AppError> {
+    state.clipboard.read_text()
+}
+
+/// 터미널에서 선택한 글자를 복사한다.
+#[tauri::command(async)]
+pub fn terminal_copy(state: State<'_, AppState>, text: String) -> Result<(), AppError> {
+    state.clipboard.write_text(&text)
+}
+
 #[tauri::command(async)]
 pub fn terminal_close(state: State<'_, AppState>, id: String) {
     state.terminals.kill(&id);

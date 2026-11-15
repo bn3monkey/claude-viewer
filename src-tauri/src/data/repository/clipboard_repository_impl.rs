@@ -12,4 +12,8 @@ impl ClipboardRepository for ClipboardRepositoryImpl {
     fn write_text(&self, text: &str) -> Result<(), AppError> {
         self.app.clipboard().write_text(text).map_err(|e| AppError::Io(e.to_string()))
     }
+
+    fn read_text(&self) -> Result<String, AppError> {
+        self.app.clipboard().read_text().map_err(|e| AppError::Io(e.to_string()))
+    }
 }

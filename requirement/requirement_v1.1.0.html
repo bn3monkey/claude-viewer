@@ -1,0 +1,549 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>클로드 뷰어 요구사항 v1.1.0 — 분할 화면 · 프로젝트별 탭 · 인터넷 탭</title>
+<style>
+  :root{
+    --bg:#1e1e1e; --bg2:#252526; --bg3:#2d2d30; --line:#3c3c3c; --fg:#d4d4d4; --fg2:#9d9d9d;
+    --accent:#4e8cff; --red:#f14c4c; --yellow:#e5c07b; --green:#4ec97a; --blue:#3b9eff; --sel:#094771;
+    --claude:#d97757;
+    --mono:ui-monospace,Consolas,"Cascadia Mono",monospace;
+    --font:"Segoe UI","Malgun Gothic","Apple SD Gothic Neo",system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.6 var(--font)}
+  main{max-width:1080px;margin:0 auto;padding:32px 28px 80px}
+  h1{font-size:26px;margin:0 0 6px}
+  h2{font-size:19px;margin:44px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+  h3{font-size:15.5px;margin:28px 0 8px;color:#e8e8e8}
+  h4{font-size:14px;margin:18px 0 6px;color:var(--fg2);font-weight:600}
+  p{margin:8px 0}
+  ul,ol{margin:6px 0 6px 0;padding-left:22px}
+  li{margin:3px 0}
+  code,kbd{font-family:var(--mono);font-size:12.5px;background:var(--bg3);padding:1px 5px;border-radius:3px}
+  pre{background:var(--bg2);border:1px solid var(--line);border-radius:6px;padding:12px 14px;overflow:auto;font-family:var(--mono);font-size:12.5px;line-height:1.5}
+  pre code{background:none;padding:0}
+  table{border-collapse:collapse;width:100%;margin:10px 0;font-size:13.5px}
+  th,td{border:1px solid var(--line);padding:6px 10px;vertical-align:top;text-align:left}
+  th{background:var(--bg3);color:#eee;font-weight:600}
+  td.k{white-space:nowrap;color:#cfcfcf}
+  .meta{color:var(--fg2);font-size:13px;margin-bottom:22px}
+  .meta span{margin-right:18px}
+  .tag{display:inline-block;font-family:var(--mono);font-size:11px;padding:0 7px;border-radius:9px;font-weight:600;color:#111;vertical-align:middle;margin-left:6px}
+  .tag.red{background:var(--red);color:#fff} .tag.yellow{background:var(--yellow)} .tag.green{background:var(--green)} .tag.blue{background:var(--blue);color:#fff} .tag.gray{background:#666;color:#fff}
+  .note{border-left:3px solid var(--accent);background:#23283a;padding:8px 14px;border-radius:0 6px 6px 0;margin:12px 0}
+  .warn{border-left:3px solid var(--yellow);background:#33301f;padding:8px 14px;border-radius:0 6px 6px 0;margin:12px 0}
+  .ac{background:var(--bg2);border:1px solid var(--line);border-radius:6px;padding:10px 14px;margin:10px 0}
+  .ac b{color:var(--green)}
+  .toc{columns:2;column-gap:40px;font-size:13.5px}
+  .toc a{color:var(--blue);text-decoration:none}
+  .toc a:hover{text-decoration:underline}
+  a{color:var(--blue)}
+  .id{font-family:var(--mono);color:var(--accent);font-size:12.5px;margin-right:6px}
+
+  /* ---- 목업 ---- */
+  .mock{background:var(--bg2);border:1px solid var(--line);border-radius:6px;padding:10px;margin:14px 0;font-size:12px;user-select:none}
+  .mock .cap{color:var(--fg2);margin-bottom:8px;font-size:12px}
+  .viewer{display:flex;height:190px;border:1px solid var(--line);background:var(--bg)}
+  .pane{flex:1;display:flex;flex-direction:column;min-width:0;position:relative}
+  .pane+.pane{border-left:1px solid var(--line)}
+  .pane.focused .tab.active{box-shadow:inset 0 2px 0 var(--accent)}
+  .tabs{display:flex;background:var(--bg3);border-bottom:1px solid var(--line);min-height:28px;align-items:stretch}
+  .tab{padding:5px 10px;border-right:1px solid var(--line);color:var(--fg2);white-space:nowrap;display:flex;align-items:center;gap:6px}
+  .tab.active{background:var(--bg);color:var(--fg)}
+  .tab .x{opacity:.6}
+  .tabs .sp{flex:1}
+  .tabs .close{padding:0 8px;display:flex;align-items:center;color:var(--fg2);border-left:1px solid var(--line)}
+  .vhead{display:flex;gap:8px;align-items:center;padding:3px 8px;background:var(--bg2);border-bottom:1px solid var(--line);color:var(--fg2);font-family:var(--mono);font-size:11px}
+  .vhead .url{flex:1;background:#3c3c3c;border:1px solid var(--line);border-radius:3px;padding:1px 6px;color:var(--fg)}
+  .vbody{flex:1;padding:10px;color:var(--fg2);font-family:var(--mono);font-size:11px;overflow:hidden}
+  .zones{position:absolute;inset:28px 0 0 0;display:flex;pointer-events:none}
+  .zone{flex:1;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:600}
+  .zone.edge{flex:0 0 22%;background:rgba(78,140,255,.35);outline:1px dashed var(--accent);outline-offset:-2px}
+  .zone.center{background:rgba(78,140,255,.12)}
+  .ghost{position:absolute;top:34px;left:46%;background:var(--bg3);border:1px solid var(--accent);padding:3px 10px;border-radius:3px;opacity:.9;color:var(--fg)}
+  .panel{background:var(--bg2);border:1px solid var(--line);width:280px}
+  .panel h5{margin:0;padding:5px 10px;font-size:11px;font-weight:600;letter-spacing:.06em;color:var(--fg2);text-transform:uppercase;border-bottom:1px solid var(--line);background:var(--bg3);display:flex;align-items:center}
+  .panel h5 .sp{flex:1}
+  .panel h5 .ico{opacity:.9;cursor:pointer;padding:0 4px;border-radius:3px}
+  .panel h5 .ico:hover{background:#444}
+  .row{display:flex;align-items:center;gap:6px;padding:3px 8px;white-space:nowrap}
+  .row.session{padding-left:26px;color:var(--fg2)}
+  .row .name{flex:1;overflow:hidden;text-overflow:ellipsis}
+  .row .ctag{font-family:var(--mono);font-size:10px;padding:0 6px;border-radius:9px;color:#111;font-weight:600;background:var(--yellow)}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--red)}
+  .dot.done{background:var(--blue)}
+  .side{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<main>
+
+<h1>클로드 뷰어 요구사항 v1.1.0</h1>
+<div class="meta">
+  <span>문서 버전 1.1.0</span><span>작성일 2026-11-15</span><span>기준 코드 1.0.1 (<code>29f3610</code>)</span><span>선행 문서 <a href="requirement_v0.md">requirement_v0.md</a> · <a href="../design/design_v1.md">design_v1.md</a></span>
+</div>
+
+<div class="note">
+  <b>한 줄 요약.</b> 뷰어 탭을 <b>프로젝트별로 기억</b>하고, 탭을 끌어 <b>좌·우 분할 화면</b>을 만들며, 세션이 여는 화면은 <b>항상 왼쪽 분할</b>에 두고, 탭 바 우클릭으로 <b>인터넷 탭</b>을 열 수 있게 한다. 가운데 <b>세션 대화창은 숨기고 보일 수 있으며 그 상태도 프로젝트별</b>로 남는다. 덤으로 터미널 탭의 <b>클립보드 붙여넣기</b>를 고친다.
+</div>
+
+<h2>목차</h2>
+<div class="toc">
+  <div><a href="#bg">1. 배경과 목표</a></div>
+  <div><a href="#terms">2. 용어</a></div>
+  <div><a href="#f1">3.1 F1 세션 대화창 숨김/보이기</a></div>
+  <div><a href="#f2">3.2 F2 탭 드래그로 분할 화면</a></div>
+  <div><a href="#f3">3.3 F3 세션이 여는 화면은 왼쪽 분할</a></div>
+  <div><a href="#f4">3.4 F4 인터넷 탭</a></div>
+  <div><a href="#f5">3.5 F5 프로젝트별 레이아웃 바인딩</a></div>
+  <div><a href="#f6">3.6 F6 터미널 클립보드 붙여넣기</a></div>
+  <div><a href="#model">4. 상태 모델과 영속화</a></div>
+  <div><a href="#web">5. 인터넷 탭 기술 선택</a></div>
+  <div><a href="#plan">6. 구현 계획</a></div>
+  <div><a href="#test">7. 검증</a></div>
+  <div><a href="#risk">8. 제약과 리스크</a></div>
+  <div><a href="#open">9. 열어 둔 결정</a></div>
+  <div><a href="#nonscope">10. 범위 밖</a></div>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="bg">1. 배경과 목표</h2>
+<p>현재(1.0.1) 뷰어는 탭 목록을 하나만 가진다. 한 프로젝트에서 설계 문서(docx·pdf·html)를 왼쪽에 두고 Notion 에 정리하다가, 다른 프로젝트의 세션이 끝나 그쪽으로 넘어가 설계 문서를 읽고 지시를 내린 뒤 다시 돌아오면, 보고 있던 탭들이 섞이거나 닫혀 있어 작업 맥락을 매번 다시 만들어야 한다.</p>
+<p>v1.1.0 의 목표는 <b>"프로젝트를 클릭하면 그 프로젝트에서 보던 화면이 그대로 돌아온다"</b> 는 것이다. 이를 위해 아래 다섯 기능을 추가하고, 터미널 붙여넣기 버그 하나를 함께 고친다.</p>
+
+<table>
+  <tr><th style="width:70px">ID</th><th>기능</th><th style="width:90px">크기</th><th>의존</th></tr>
+  <tr><td class="k"><span class="id">F1</span></td><td>세션 대화창(가운데 열) 숨김/보이기. 숨김 여부는 프로젝트별로 기억</td><td><span class="tag green">작음</span></td><td>P0 (레이아웃에 저장)</td></tr>
+  <tr><td class="k"><span class="id">F2</span></td><td>탭을 끌어 좌·우 분할 화면 생성·이동, 분할 닫기 버튼</td><td><span class="tag red">큼</span></td><td>P0 (뷰어 상태 모델 개편)</td></tr>
+  <tr><td class="k"><span class="id">F3</span></td><td>세션(대화)에서 여는 화면은 항상 왼쪽 분할에</td><td><span class="tag green">작음</span></td><td>F2</td></tr>
+  <tr><td class="k"><span class="id">F4</span></td><td>탭 바 우클릭 → "인터넷 탭 열기…" (URL 입력, 앱 안에서 웹 열람)</td><td><span class="tag red">큼</span></td><td>P0, Rust 자식 웹뷰</td></tr>
+  <tr><td class="k"><span class="id">F5</span></td><td>분할 여부·각 분할의 탭·활성 탭·대화창 숨김을 프로젝트별로 기억하고 프로젝트 전환 때 복원</td><td><span class="tag yellow">중간</span></td><td>P0</td></tr>
+  <tr><td class="k"><span class="id">F6</span></td><td>터미널 탭에서 클립보드 붙여넣기(<kbd>Ctrl+V</kbd> · <kbd>Shift+Insert</kbd> · 우클릭)와 선택 복사가 되게 고침</td><td><span class="tag green">작음</span></td><td>없음</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="terms">2. 용어</h2>
+<table>
+  <tr><th style="width:170px">용어</th><th>뜻</th></tr>
+  <tr><td class="k">뷰어 (Viewer)</td><td>화면 오른쪽 ⑤ File Viewer 영역 전체. 1.0.1 에서 탭 바 하나와 본문 하나로 되어 있다.</td></tr>
+  <tr><td class="k">분할 (Pane)</td><td>뷰어 안에서 탭 바 + 본문을 하나씩 가진 독립 영역. 최대 2개(왼쪽 · 오른쪽). 분할이 하나면 그것이 "왼쪽" 이다.</td></tr>
+  <tr><td class="k">탭 (Tab)</td><td>파일(경로+모드), diff, 터미널, 인터넷 페이지 하나. 어느 한 분할에만 속한다.</td></tr>
+  <tr><td class="k">포커스된 분할</td><td>사용자가 마지막으로 클릭(탭 바 또는 본문)한 분할. 트리에서 파일을 열면 여기로 들어간다.</td></tr>
+  <tr><td class="k">레이아웃 (Layout)</td><td>분할 목록(1~2개) + 각 분할의 탭과 활성 탭 + 포커스된 분할 + 분할 비율 + <b>세션 대화창 숨김 여부</b>. <b>프로젝트 하나에 레이아웃 하나.</b></td></tr>
+  <tr><td class="k">세션 대화창</td><td>가운데 열의 ④ Session UI(<code>SessionPanel</code>). 사용량 바·대화·입력창을 포함한 열 전체를 가리킨다.</td></tr>
+  <tr><td class="k">현재 프로젝트</td><td><code>useProjectVM.selection.root</code>. 프로젝트 행 또는 그 아래 세션을 고르면 바뀐다. 아무것도 안 골랐으면 "프로젝트 없음" 레이아웃(키 <code>""</code>)을 쓴다.</td></tr>
+  <tr><td class="k">세션 출처 열기</td><td>대화 쪽에서 비롯된 열기. ① AI 응답의 <code>&lt;viewer open=…/&gt;</code> 지시문(백엔드 이벤트 <code>viewer://open</code>), ② 대화 말풍선 안 링크 클릭(<code>activateLink</code>), ③ 권한 카드·도구 결과 등 세션 패널 안에서 눌러 여는 파일.</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2>3. 기능 요구사항</h2>
+
+<!-- ---------------- F1 ---------------- -->
+<h3 id="f1"><span class="id">F1</span> 세션 대화창 숨김 / 보이기 <span class="tag green">작음</span></h3>
+<p>앱은 세 열로 되어 있다: ① Projects &amp; Sessions + 트리, ② 세션 대화창(④ Session UI), ③ 파일 뷰어. 문서를 읽거나 Notion 에 정리할 때는 대화창이 자리를 차지하므로 <b>가운데 세션 대화창을 숨기고 뷰어가 그 자리를 쓰게</b> 한다. 숨김 여부는 <b>프로젝트별로 기억</b>한다(F5 레이아웃의 일부).</p>
+
+<h4>1.1 토글 위치 — 항상 떠 있는 작은 띠</h4>
+<p>세션 대화창의 <b>왼쪽 가장자리</b>(트리 열과 대화창 사이)에 <b>폭 12px 의 세로 띠</b>를 <b>상시</b> 둔다. 이 띠가 유일한 토글이다. 보이는 상태에서 누르면 접히고, 접힌 상태에서 누르면 펴진다. 띠는 접혀도 같은 자리·같은 크기로 남으므로 되돌릴 곳을 찾을 필요가 없다.</p>
+<ul>
+  <li><b>크기:</b> 폭 12px, 높이는 열 전체. 마우스로 누를 수 있을 만큼만 두고 화면을 거의 차지하지 않는다. 클릭 판정은 띠 전체.</li>
+  <li><b>모양:</b> 평소엔 배경과 거의 같은 색(<code>--bg2</code>)에 세로 가운데 작은 꺾쇠 하나만 보인다. 펼친 상태는 <code>‹</code>(누르면 접힘), 접힌 상태는 <code>›</code>(누르면 펴짐). 마우스를 올리면 배경이 <code>--bg3</code> 로 밝아지고 툴팁 "세션 대화창 숨기기 / 보이기" 를 보인다.</li>
+  <li><b>알림 점:</b> 접힌 동안 선택된 세션이 진행 중이거나 권한 질문이 기다리면 꺾쇠 아래에 6px 빨간 점.</li>
+  <li><b>리사이즈 핸들과 분리:</b> 띠는 클릭 전용이고 끌어서 너비를 바꾸지 않는다. 대화창 ↔ 뷰어 사이의 기존 리사이즈 핸들은 그대로이며, 접힌 동안에만 사라진다. 띠를 대화창 <b>왼쪽</b>에 두는 이유는 오른쪽 핸들·F2 분할 핸들과 겹치거나 헷갈리지 않게 하기 위해서다.</li>
+</ul>
+
+<div class="mock">
+  <div class="cap">목업 ① — 보이는 상태. 대화창 왼쪽 가장자리에 12px 띠와 <code>‹</code>. 누르면 접힌다.</div>
+  <div style="display:flex;height:120px;border:1px solid var(--line);background:var(--bg)">
+    <div style="width:22%;border-right:1px solid var(--line);padding:6px;color:var(--fg2)">① 프로젝트 · 트리</div>
+    <div style="width:12px;background:var(--bg3);border-right:1px solid var(--line);display:flex;align-items:center;justify-content:center;color:var(--fg);font-size:11px;cursor:pointer" title="세션 대화창 숨기기">‹</div>
+    <div style="width:36%;border-right:1px solid var(--line);padding:6px;color:var(--fg2)">② 세션 대화창</div>
+    <div style="flex:1;padding:6px;color:var(--fg2)">③ 뷰어</div>
+  </div>
+</div>
+<div class="mock">
+  <div class="cap">목업 ② — 접힌 상태. 같은 띠가 그 자리에 남아 <code>›</code> 로 바뀐다. 뷰어가 대화창 자리까지 넓어진다. 세션이 진행 중이면 꺾쇠 아래 빨간 점.</div>
+  <div style="display:flex;height:120px;border:1px solid var(--line);background:var(--bg)">
+    <div style="width:22%;border-right:1px solid var(--line);padding:6px;color:var(--fg2)">① 프로젝트 · 트리</div>
+    <div style="width:12px;background:var(--bg3);border-right:1px solid var(--line);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:var(--fg);font-size:11px;cursor:pointer" title="세션 대화창 보이기">›<span class="dot" style="width:6px;height:6px"></span></div>
+    <div style="flex:1;padding:6px;color:var(--fg2)">③ 뷰어 (분할이 둘이면 둘 다 넓어짐)</div>
+  </div>
+</div>
+
+<h4>1.2 동작</h4>
+<ul>
+  <li>띠를 누르면 <code>useViewerVM.toggleSession()</code> 을 부른다. 상태는 현재 프로젝트 레이아웃의 <code>sessionHidden</code> 에 저장되며, 프로젝트를 바꾸면 그 프로젝트의 값이 적용된다(F5).</li>
+  <li>구현: 메인 <code>PanelGroup</code> 에서 세션 <code>Panel</code> 앞에 띠 컴포넌트(<code>SessionToggle</code>)를 고정 폭 요소로 넣고, 세션 <code>Panel</code> 은 <code>collapsible collapsedSize={0}</code> 로 두어 ref 의 <code>collapse()/expand()</code> 로 제어한다. 펼칠 때는 숨기기 전 너비(<code>layout-main</code> 의 저장값)로 돌아온다.</li>
+  <li>세션 패널은 숨겨도 <b>언마운트하지 않는다</b>. 대화 스트림·입력 중인 초안·스크롤 위치가 그대로 남아야 하고, 권한 질문 카드도 계속 쌓여야 한다.</li>
+  <li><b>자동으로 보이기</b>: Projects &amp; Sessions 에서 <b>세션 행</b>을 클릭하면(그 프로젝트가 숨김 상태여도) 대화창을 보인다 — 세션을 고른다는 것은 보겠다는 뜻이기 때문. 새 활성화 세션 생성·재개도 같다. <b>프로젝트 행</b> 클릭은 저장된 숨김 상태를 그대로 따른다.</li>
+  <li>프로젝트가 선택되지 않은 상태(<code>""</code> 레이아웃)에서도 토글은 동작하며 그 값은 <code>""</code> 에 저장된다.</li>
+  <li>단축키는 v1.1.0 에서 두지 않는다(터미널 탭이 포커스를 가질 때 셸로 보내는 키와 충돌 여지, §9 Q11).</li>
+</ul>
+<div class="ac"><b>수용 기준.</b> ① A 프로젝트에서 띠를 누르면 대화창이 접히고 뷰어가 가운데까지 넓어지며, 띠는 같은 자리에서 <code>›</code> 로 바뀐다. ② 띠를 다시 누르면 접기 전 너비로 펴진다. ③ B 프로젝트를 클릭하면 B 의 상태(기본 보임)가 적용되고, A 로 돌아오면 다시 접혀 있다. ④ 앱을 다시 켜도 A 는 접힘, B 는 보임이다. ⑤ 접힌 채 A 의 세션 행을 클릭하면 대화창이 나타나고 A 의 저장값은 "보임" 으로 바뀐다. ⑥ 접힌 동안 세션이 돌고 있으면 띠에 빨간 점이 보이고, 펴면 입력 중이던 초안이 그대로 있다.</div>
+
+<!-- ---------------- F2 ---------------- -->
+<h3 id="f2"><span class="id">F2</span> 탭 드래그로 분할 화면 <span class="tag red">큼</span></h3>
+<p>VS Code 의 편집기 그룹처럼, 탭을 끌어 뷰어를 좌·우 둘로 나누고 탭을 분할 사이에서 옮긴다. <b>분할은 최대 2개.</b></p>
+
+<div class="mock">
+  <div class="cap">목업 ① — 분할이 하나일 때 탭을 끌면 본문 위에 드롭 영역이 나타난다. 왼쪽 가장자리(22%)에 놓으면 왼쪽 분할, 오른쪽 가장자리에 놓으면 오른쪽 분할이 새로 생긴다. 가운데에 놓으면 아무 일도 없다.</div>
+  <div class="viewer">
+    <div class="pane focused">
+      <div class="tabs"><div class="tab active">design_v1.md · 미리보기 <span class="x">×</span></div><div class="tab">App.tsx</div><div class="tab">spec.docx</div><div class="sp"></div></div>
+      <div class="vbody">C:\repository\private\claude-viewer\design\design_v1.md</div>
+      <div class="zones"><div class="zone edge">← 왼쪽에 분할</div><div class="zone center">(그대로)</div><div class="zone edge">오른쪽에 분할 →</div></div>
+      <div class="ghost">spec.docx</div>
+    </div>
+  </div>
+</div>
+
+<div class="mock">
+  <div class="cap">목업 ② — 분할이 둘일 때. 오른쪽 분할 탭 바 끝의 <b>×</b> 가 그 분할을 닫는다(탭 전부 닫힘). 포커스된 분할의 활성 탭은 위에 파란 선이 있다. 끌어다 다른 분할의 탭 바나 본문 가운데에 놓으면 그 분할로 이동한다.</div>
+  <div class="viewer">
+    <div class="pane">
+      <div class="tabs"><div class="tab active">spec.docx <span class="x">×</span></div><div class="tab">overview.pdf</div><div class="sp"></div><div class="close" title="분할 닫기">×</div></div>
+      <div class="vhead">C:\…\docs\spec.docx <span class="sp"></span> DOCX 렌더링 · 읽기 전용</div>
+      <div class="vbody">(세션이 여는 파일은 항상 이 왼쪽 분할로 들어온다 — F3)</div>
+    </div>
+    <div class="pane focused">
+      <div class="tabs"><div class="tab active">Notion <span class="x">×</span></div><div class="tab">App.tsx</div><div class="sp"></div><div class="close" title="분할 닫기">×</div></div>
+      <div class="vhead">← → ⟳ <span class="url">https://www.notion.so/…</span> ↗</div>
+      <div class="vbody">(인터넷 탭 — F4)</div>
+    </div>
+  </div>
+</div>
+
+<h4>2.1 드래그 시작</h4>
+<ul>
+  <li>탭은 HTML5 Drag &amp; Drop(<code>draggable</code>)으로 끈다. <code>tauri.conf.json</code> 의 <code>dragDropEnabled: false</code> 가 이미 있어 WebView2 에서 HTML5 DnD 가 동작한다(트리 패널의 react-arborist 가 같은 경로를 쓴다).</li>
+  <li><code>dataTransfer</code> 타입 <code>application/x-claude-viewer-tab</code> 에 <code>{ pane, key }</code> 를 JSON 으로 담는다. 다른 타입(파일 등)은 드롭 대상으로 받지 않는다.</li>
+  <li>드래그 중에는 전역 <code>dragging</code> 상태를 올려 모든 분할 본문 위에 드롭 영역 오버레이를 띄운다. 인터넷 탭의 자식 웹뷰는 이 동안 숨긴다(§5 참조, 웹뷰가 오버레이를 덮기 때문).</li>
+  <li><kbd>Esc</kbd> 또는 밖에 놓으면 취소.</li>
+</ul>
+
+<h4>2.2 드롭 대상과 결과</h4>
+<table>
+  <tr><th style="width:150px">현재 분할 수</th><th style="width:220px">놓은 곳</th><th>결과</th></tr>
+  <tr><td rowspan="4">1개</td><td>본문 왼쪽 가장자리 영역</td><td><b>왼쪽에 새 분할</b>을 만들고 탭을 옮긴다. 기존 분할은 오른쪽이 된다.</td></tr>
+  <tr><td>본문 오른쪽 가장자리 영역</td><td><b>오른쪽에 새 분할</b>을 만들고 탭을 옮긴다. 기존 분할은 왼쪽이 된다.</td></tr>
+  <tr><td>본문 가운데</td><td>아무 일 없음.</td></tr>
+  <tr><td>같은 탭 바의 다른 위치</td><td>탭 순서 바꾸기(놓은 자리에 삽입).</td></tr>
+  <tr><td rowspan="4">2개</td><td>어느 분할이든 본문 왼쪽 가장자리</td><td>탭을 <b>왼쪽 분할</b>로 옮긴다(세 번째 분할은 만들지 않는다).</td></tr>
+  <tr><td>어느 분할이든 본문 오른쪽 가장자리</td><td>탭을 <b>오른쪽 분할</b>로 옮긴다.</td></tr>
+  <tr><td>다른 분할의 본문 가운데 또는 탭 바</td><td>그 분할로 옮긴다. 탭 바에 놓으면 그 자리에, 본문에 놓으면 맨 뒤에 삽입.</td></tr>
+  <tr><td>같은 분할의 탭 바</td><td>순서 바꾸기.</td></tr>
+</table>
+<ul>
+  <li>옮겨진 탭은 목적지 분할에서 <b>활성 탭</b>이 되고, 목적지 분할이 <b>포커스</b>를 얻는다.</li>
+  <li>탭 키(<code>mode|path</code> 등)는 <b>뷰어 전체에서 유일</b>하다. 목적지 분할에 같은 키의 탭이 이미 있으면 끌어온 쪽을 닫고 기존 탭을 활성화한다(합침). 같은 파일을 두 분할에 동시에 띄우는 것은 지원하지 않는다 — 편집 초안·스크롤 위치가 탭 키로 저장되기 때문(<code>viewerBuffers.ts</code>).</li>
+  <li>출발 분할에서 활성 탭이 빠져나가면 이웃 탭(기존 <code>close</code> 와 같은 규칙)이 활성이 된다.</li>
+  <li>출발 분할의 탭이 0개가 되고 분할이 둘이면 <b>빈 분할은 자동으로 닫혀</b> 단일 화면으로 돌아간다. 분할이 하나뿐이면 빈 채로 남아 "트리에서 파일을 선택하면…" 안내를 보인다.</li>
+</ul>
+
+<h4>2.3 분할 닫기 버튼</h4>
+<ul>
+  <li>분할이 둘일 때 <b>각 분할</b>의 탭 바 맨 오른쪽 끝에 <code>×</code> 버튼(<code>.tabs .close</code>)을 둔다. 분할이 하나면 보이지 않는다.</li>
+  <li>누르면 그 분할의 모든 탭을 닫는다. 저장하지 않은 편집이 있으면 기존 <code>confirmDiscard</code> 로 확인하고, 터미널 탭은 프로세스를 끝내고(<code>closeTerminals</code>), 인터넷 탭은 웹뷰를 없앤다. 취소하면 아무 변화 없음.</li>
+  <li>남은 분할이 단일 화면이 되고 포커스를 받는다.</li>
+</ul>
+
+<h4>2.4 분할 비율과 포커스</h4>
+<ul>
+  <li>두 분할은 <code>react-resizable-panels</code> 가로 <code>PanelGroup</code> 으로 나누고 사이에 <code>resize-h</code> 핸들을 둔다. 비율은 <code>autoSaveId</code> 대신 레이아웃에 저장해 프로젝트별로 기억한다(F5). 기본 50 : 50, 각 분할 최소 20%.</li>
+  <li>분할 안 어디든 <code>pointerdown</code> 하면 그 분할이 포커스된다. 포커스된 분할의 활성 탭 위에 2px 강조선(<code>--accent</code>), 포커스 없는 분할의 활성 탭은 지금처럼 배경색만.</li>
+  <li>트리 클릭·우클릭 메뉴·F12·터미널 실행·git diff 등 <b>사용자가 뷰어/트리에서 여는 탭은 포커스된 분할</b>로 들어간다. 세션 출처 열기는 F3.</li>
+  <li><kbd>Ctrl+F</kbd> 찾기 바, 정의 목록(<code>DefinitionPicker</code>), 이미지 맞춤 토글은 <b>분할마다 따로</b> 동작한다. 찾기는 마지막으로 클릭한 분할만 가로챈다(현재의 "마지막 클릭이 이 패널일 때만" 규칙을 분할 단위로).</li>
+</ul>
+
+<h4>2.5 탭 우클릭 메뉴 변경</h4>
+<p>기존 "닫기 / 다른 탭 모두 닫기 / 모든 탭 닫기" 에 아래를 더한다. "모든 탭 닫기" 는 <b>그 분할</b>의 탭만 닫는다.</p>
+<ul>
+  <li><b>오른쪽으로 분할 / 왼쪽으로 분할</b> — 분할이 하나일 때. 드래그 없이 같은 결과.</li>
+  <li><b>다른 분할로 이동</b> — 분할이 둘일 때.</li>
+  <li><b>인터넷 탭 열기…</b> — F4. 탭이 하나도 없어도 메뉴가 뜨도록 <code>ContextMenu.Trigger</code> 의 <code>disabled</code> 를 없앤다.</li>
+</ul>
+
+<div class="ac"><b>수용 기준.</b> ① 탭 3개인 단일 화면에서 하나를 오른쪽 가장자리에 놓으면 왼쪽 2개 · 오른쪽 1개가 되고 오른쪽이 포커스된다. ② 그 상태에서 왼쪽 탭을 오른쪽 탭 바에 놓으면 왼쪽 1개 · 오른쪽 2개. ③ 왼쪽의 마지막 탭을 오른쪽으로 끌면 단일 화면으로 돌아간다. ④ 저장 안 한 편집 탭이 있는 분할의 × 를 누르면 확인창이 뜨고, 취소하면 그대로다. ⑤ 터미널 탭을 다른 분할로 옮겨도 셸 출력과 스크롤백이 유지된다. ⑥ 분할 사이 경계를 끌어 비율을 바꾸고 앱을 다시 켜도 그 비율이다.</div>
+
+<!-- ---------------- F3 ---------------- -->
+<h3 id="f3"><span class="id">F3</span> 세션이 여는 화면은 왼쪽 분할 <span class="tag green">작음</span></h3>
+<p>세션 출처 열기(§2 용어)는 <b>포커스와 무관하게 왼쪽 분할</b>(<code>panes[0]</code>)에 들어간다. 분할이 하나면 그것이 왼쪽이다.</p>
+<ul>
+  <li><code>useViewerVM.open(request, extra)</code> 의 <code>extra</code> 에 <code>target?: "left" | "focused"</code> 를 더한다. 기본은 <code>"focused"</code>.</li>
+  <li><code>"left"</code> 를 넘기는 곳: <code>startViewerEvents</code> 의 <code>viewer://open</code> 처리, 세션 패널 안 <code>Markdown</code>(ChatItem) 의 링크 활성화 경로. <code>Markdown</code> 컴포넌트는 뷰어의 미리보기와 공유되므로 <code>source: "session" | "viewer"</code> prop 으로 구분해 세션 쪽만 왼쪽으로 보낸다.</li>
+  <li>열린 탭은 왼쪽 분할의 <b>활성 탭</b>이 된다. <b>포커스된 분할은 바꾸지 않는다</b> — 사용자가 오른쪽에서 보고 있던 흐름(예: Notion)을 끊지 않기 위함. 같은 키의 탭이 오른쪽 분할에 이미 있으면 새로 만들지 않고 오른쪽에서 활성화만 한다(유일성 규칙 우선).</li>
+  <li>분할을 새로 만들지는 않는다. 사용자가 분할을 안 썼으면 지금과 똑같이 하나의 화면에 열린다.</li>
+</ul>
+<div class="ac"><b>수용 기준.</b> ① 오른쪽 분할을 포커스한 채 AI 가 <code>&lt;viewer open="docs/a.md"/&gt;</code> 를 보내면 a.md 는 왼쪽 분할의 활성 탭이 되고 오른쪽 분할의 활성 탭과 포커스는 그대로다. ② 대화 안 링크 클릭도 같다. ③ 뷰어의 Markdown 미리보기 안 링크 클릭은 포커스된 분할에 열린다(기존과 동일).</div>
+
+<!-- ---------------- F4 ---------------- -->
+<h3 id="f4"><span class="id">F4</span> 인터넷 탭 <span class="tag red">큼</span></h3>
+<p>탭 바 우클릭 메뉴의 <b>"인터넷 탭 열기…"</b> 로 URL 을 입력하면 앱 안에 웹 페이지를 띄운다. Notion·GitHub·사내 위키처럼 로그인이 필요한 사이트도 열려야 하므로 <b>Tauri 자식 웹뷰</b>로 구현한다(비교는 §5).</p>
+
+<h4>4.1 열기</h4>
+<ul>
+  <li>메뉴 항목 선택 → 기존 <code>askText("인터넷 탭 열기", "URL")</code> 로 입력. 빈 값·취소면 아무 일 없음.</li>
+  <li>정규화: 앞뒤 공백 제거. 스킴이 없으면 <code>https://</code> 를 붙인다. <code>http:</code>·<code>https:</code> 외 스킴(<code>file:</code>, <code>tauri:</code>, <code>htmlview:</code>, <code>javascript:</code> …)은 토스트로 거부.</li>
+  <li>탭은 우클릭한 탭 바가 속한 분할(분할이 없으면 포커스된 분할)의 맨 뒤에 열리고 활성·포커스된다.</li>
+  <li><code>ViewerMode</code> 에 <code>"web"</code> 을 더한다. <code>ViewerRequest.path</code> 에 URL 을 담는다. 탭 키는 <code>web|&lt;uuid&gt;</code> — 같은 URL 을 여러 탭으로 열 수 있고, 안에서 이동해 URL 이 바뀌어도 키가 변하지 않게.</li>
+  <li>탭 이름은 페이지 <code>title</code>(웹뷰가 알려 줌), 없으면 호스트명. 접미사 없음, 아이콘으로 <code>Globe</code> 를 앞에 붙인다.</li>
+</ul>
+
+<h4>4.2 머리글(vhead)</h4>
+<p><code>← 뒤로 · → 앞으로 · ⟳ 새로 고침 · [ URL 입력란 ] · ↗ 외부 브라우저로 열기</code>. 입력란에서 <kbd>Enter</kbd> 면 이동, 현재 URL 은 이동할 때마다 갱신. 뒤로/앞으로는 가능할 때만 활성. "읽기 전용" 표시는 없다.</p>
+
+<h4>4.3 표시와 숨김</h4>
+<ul>
+  <li>웹뷰는 DOM 이 아니라 <b>창 위에 겹쳐 뜨는 네이티브 뷰</b>다. 프론트의 <code>WebView</code> 컴포넌트가 자기 본문 <code>div</code> 의 위치·크기를 <code>ResizeObserver</code> 와 창 리사이즈로 추적해 백엔드 <code>web_set_bounds</code> 로 보낸다(논리 px, <code>LogicalPosition/LogicalSize</code>).</li>
+  <li>아래 경우 웹뷰를 <b>숨긴다</b>(<code>web_set_visible(false)</code>): 탭이 비활성 · 그 분할이 다른 프로젝트 레이아웃으로 바뀌어 화면에서 내려감 · 탭 드래그 중 · <b>Radix 다이얼로그/컨텍스트 메뉴/드롭다운이 열려 있는 동안</b>. 마지막 조건은 <code>document.body</code> 에 <code>MutationObserver</code> 하나를 두고 <code>[data-radix-popper-content-wrapper], [role="dialog"]</code> 존재 여부를 보는 전역 훅으로 구현해 개별 컴포넌트를 고치지 않는다.</li>
+  <li>숨겨도 페이지는 살아 있다(로그인·스크롤 유지). 탭을 닫으면 <code>web_close</code> 로 웹뷰를 없앤다.</li>
+</ul>
+
+<h4>4.4 안전 규칙</h4>
+<ul>
+  <li>자식 웹뷰는 <b>원격 URL 전용</b>이며 Tauri IPC 가 주입되지 않는다(<code>dangerousRemoteDomainIpcAccess</code> 를 쓰지 않음). 별도 capability 파일(<code>capabilities/web.json</code>, <code>webviews: ["web-*"]</code>)에 <b>권한 없음</b>으로 선언한다.</li>
+  <li><code>on_navigation</code> 에서 <code>http(s)</code> 외 스킴은 막는다. 새 창 요청(<code>target=_blank</code>)은 같은 웹뷰에서 연다.</li>
+  <li>쿠키·로컬스토리지는 WebView2 의 앱 사용자 데이터 폴더에 남아 다음 실행에도 로그인이 유지된다(사용자가 원하는 동작). 설정 창에 "인터넷 탭 데이터 지우기" 는 v1.1.0 범위에 넣지 않는다(§10).</li>
+</ul>
+
+<h4>4.5 저장·복원</h4>
+<ul>
+  <li><code>SavedTab { mode: "web", path: &lt;현재 URL&gt; }</code> 로 레이아웃에 저장(F5). 복원 때 웹뷰를 다시 만들고 그 URL 을 연다. 뒤로/앞으로 기록은 복원하지 않는다.</li>
+  <li>저장 시점은 다른 탭과 같다(변경 뒤 300ms). URL 이 바뀔 때마다 탭의 <code>path</code> 를 갱신하므로 자동으로 포함된다.</li>
+</ul>
+<div class="ac"><b>수용 기준.</b> ① <code>notion.so</code> 를 입력하면 Notion 이 열리고 로그인할 수 있으며, 앱을 다시 켜도 로그인이 유지된 채 같은 페이지가 열린다. ② 인터넷 탭 위에서 우클릭 메뉴·설정 창을 열면 웹뷰가 메뉴를 가리지 않는다. ③ 다른 탭으로 가면 웹뷰가 사라지고 돌아오면 스크롤 위치 그대로 돌아온다. ④ 분할 경계를 끌면 웹뷰가 분할 크기를 즉시 따라간다. ⑤ <code>file:///C:/</code> 를 입력하면 거부 토스트가 뜬다. ⑥ 페이지 안 링크를 눌러 이동하면 탭 이름과 URL 란이 바뀌고 ← 가 활성화된다.</div>
+
+<!-- ---------------- F5 ---------------- -->
+<h3 id="f5"><span class="id">F5</span> 프로젝트별 레이아웃 바인딩 <span class="tag yellow">중간</span></h3>
+<p>뷰어 레이아웃(분할 여부, 각 분할의 탭과 활성 탭, 포커스, 비율, 세션 대화창 숨김)을 <b>현재 프로젝트</b>에 묶는다. 프로젝트(또는 그 아래 세션)를 클릭하면 그 프로젝트의 레이아웃이 통째로 돌아온다.</p>
+<ul>
+  <li><code>useViewerVM</code> 은 <code>layouts: Record&lt;rootKey, Layout&gt;</code> 와 <code>current: rootKey</code> 를 가진다. <code>rootKey</code> 는 <code>selection.root</code>, 없으면 <code>""</code>.</li>
+  <li><code>App.tsx</code> 에서 <code>selection.root</code> 가 바뀌면(이미 트리를 바꾸는 effect 가 있다) <code>useViewerVM.switchProject(root)</code> 를 부른다. 레이아웃이 없으면 빈 단일 분할·대화창 보임으로 만든다. 전환 직후 <code>sessionHidden</code> 에 맞춰 세션 패널을 접거나 편다(F1).</li>
+  <li>프로젝트 A 에서 연 탭이 B 의 파일을 가리켜도 상관없다. 탭은 <b>열린 시점의 현재 프로젝트</b> 레이아웃에 속한다.</li>
+  <li>전환 때 화면에서 내려간 탭의 상태: 편집 초안·스크롤(<code>viewerBuffers</code>)은 탭 키로 저장되므로 유지. 터미널 탭은 프로세스가 계속 돌고 xterm 인스턴스를 유지한다(§8 리스크 R2). 인터넷 탭 웹뷰는 숨긴다. 저장 안 한 편집이 있는 탭은 전환을 막지 않는다 — 돌아오면 그대로 있다.</li>
+  <li>프로젝트를 닫으면(<code>project_close</code>) 그 레이아웃을 지운다. 기존 <code>closeUnder(root)</code> 가 이 역할로 바뀐다: 터미널 종료·웹뷰 제거 포함.</li>
+  <li>프로젝트 선택이 <code>null</code> 이 되면(마지막 프로젝트 닫기 등) <code>""</code> 레이아웃을 보인다.</li>
+</ul>
+<div class="ac"><b>수용 기준.</b> ① A 에서 왼쪽 spec.docx · 오른쪽 Notion · 대화창 숨김, B 에서 단일 화면 design.md · 대화창 보임을 만들어 둔 뒤 A ↔ B 를 오가면 각자 그 모습 그대로다. ② A 의 Notion 로그인·스크롤이 B 에 다녀온 뒤에도 유지된다. ③ 앱을 다시 켜고 A 를 누르면 A 레이아웃, B 를 누르면 B 레이아웃이다. ④ A 를 닫으면 A 의 터미널 프로세스가 끝나고 settings.json 에서 A 레이아웃이 사라진다. ⑤ 1.0.1 의 settings.json(<code>viewerTabs</code>)을 가진 채 1.1.0 을 켜면 그 탭들이 사라지지 않고 경로가 속한 프로젝트 레이아웃으로 들어간다.</div>
+
+<!-- ---------------- F6 ---------------- -->
+<h3 id="f6"><span class="id">F6</span> 터미널 클립보드 붙여넣기 <span class="tag green">작음</span> <span class="tag blue">버그</span></h3>
+<p>터미널 탭(xterm.js)에서 클립보드의 글자가 <kbd>Ctrl+V</kbd> 로 붙지 않는다.</p>
+
+<h4>6.1 원인 분석</h4>
+<ul>
+  <li><code>TerminalView.tsx</code> 는 xterm 기본 설정만 쓴다. xterm.js 는 <kbd>Ctrl+V</kbd> 를 <b>스스로 처리하지 않고</b> 브라우저가 자기 숨은 <code>textarea</code> 에 <code>paste</code> 이벤트를 주기를 기다린다. 이 경로는 일반 브라우저에서는 동작하지만, Tauri(WebView2) 안에서는 <code>paste</code> 이벤트가 숨은 textarea 까지 오지 않거나 클립보드 읽기 권한이 없어 조용히 실패하는 사례가 보고되어 있다. 앱의 capability 는 <code>core:default</code>·<code>dialog:allow-open</code> 만 있고 클립보드 플러그인의 프론트 권한은 열려 있지 않다.</li>
+  <li>Windows 터미널 관례(<kbd>Shift+Insert</kbd>, 우클릭 = 붙여넣기, <kbd>Ctrl+Shift+V</kbd>)는 어느 것도 구현되어 있지 않다. 앱 루트가 <code>onContextMenu</code> 를 <code>preventDefault</code> 하므로 우클릭은 아무 일도 하지 않는다.</li>
+  <li>반대 방향(선택 → <kbd>Ctrl+C</kbd> 복사)도 xterm 기본에서는 <kbd>Ctrl+C</kbd> 가 셸에 <code>^C</code> 로 가므로 선택 복사가 안 된다.</li>
+</ul>
+<div class="warn">이 세션에서는 GUI 를 띄워 재현하지 못했다. 위는 코드와 알려진 사례로 추정한 원인이며, 아래 해법은 <b>원인이 어느 쪽이든 동작</b>하도록 브라우저 <code>paste</code> 이벤트에 의존하지 않는 방식으로 잡았다.</div>
+
+<h4>6.2 해법</h4>
+<ul>
+  <li><b>붙여넣기는 백엔드가 클립보드를 읽는다.</b> Rust 에 <code>terminal_paste(id)</code> 명령을 추가해, 이미 의존성에 있는 <code>tauri-plugin-clipboard-manager</code>(<code>state.clipboard</code>, 트리의 "경로 복사" 가 쓰는 것)로 텍스트를 읽어 그대로 돌려준다. 프론트는 받은 글자를 <code>terminal.paste(text)</code> 로 넣는다 — xterm 의 <code>paste()</code> 가 <code>\n</code> → <code>\r</code> 변환과 bracketed paste 모드를 처리하므로 <code>terminal_write</code> 에 직접 쓰지 않는다. 프론트 capability 변경 없음.</li>
+  <li><b>키 가로채기.</b> <code>terminal.attachCustomKeyEventHandler</code> 로 <kbd>Ctrl+V</kbd>, <kbd>Ctrl+Shift+V</kbd>, <kbd>Shift+Insert</kbd>(macOS 는 <kbd>⌘V</kbd>) 를 잡아 <code>terminal_paste</code> 를 부르고 <code>false</code> 를 돌려 xterm·브라우저 기본 처리를 막는다.</li>
+  <li><b>선택 복사.</b> 같은 핸들러에서 <kbd>Ctrl+C</kbd>(macOS <kbd>⌘C</kbd>) 는 <code>terminal.hasSelection()</code> 이면 <code>terminal.getSelection()</code> 을 <code>terminal_copy(text)</code>(백엔드 클립보드 쓰기)로 복사하고 선택을 지운다. 선택이 없으면 그대로 셸에 <code>^C</code> 로 간다(인터럽트 유지). <kbd>Ctrl+Shift+C</kbd> 는 항상 복사.</li>
+  <li><b>우클릭.</b> 터미널 본문에서 우클릭하면 Windows Terminal 관례대로 선택이 있으면 복사, 없으면 붙여넣기. 컨텍스트 메뉴는 띄우지 않는다.</li>
+  <li>포커스 보장: 탭이 활성화될 때 이미 <code>terminal.focus()</code> 를 부르고 있다. 분할(F2)·프로젝트 전환(F5) 뒤에도 같은 경로를 타도록 유지한다.</li>
+</ul>
+<div class="ac"><b>수용 기준.</b> ① 메모장에서 두 줄을 복사해 PowerShell 터미널 탭에 <kbd>Ctrl+V</kbd> 하면 두 줄이 입력된다(두 번째 줄은 첫 줄 실행 뒤). ② <kbd>Shift+Insert</kbd> 와 우클릭(선택 없음)도 같다. ③ 출력 일부를 드래그로 선택하고 <kbd>Ctrl+C</kbd> 하면 클립보드에 들어가고 셸은 중단되지 않는다. ④ 선택 없이 <kbd>Ctrl+C</kbd> 하면 실행 중 명령이 중단된다. ⑤ git bash 탭에서 <code>cat</code> 을 띄운 뒤 붙여넣어도 글자가 깨지지 않는다(bracketed paste).</div>
+
+<!-- ============================================================ -->
+<h2 id="model">4. 상태 모델과 영속화</h2>
+
+<h3>4.1 프론트 상태 (zustand, <code>useViewerVM</code>)</h3>
+<pre><code>type PaneId = string;                         // uuid. 순서는 Layout.panes 배열이 정한다 (0 = 왼쪽)
+
+type Pane = {
+  id: PaneId;
+  tabs: ViewerTab[];                          // 기존 ViewerTab 그대로 (+ web 필드)
+  activeKey: string | null;
+};
+
+type Layout = {
+  panes: Pane[];                              // 길이 1 또는 2
+  focused: PaneId;
+  ratio: number;                              // 왼쪽 분할 비율(%). 분할이 하나면 무시
+  sessionHidden: boolean;                     // F1. 가운데 세션 대화창을 숨겼는가
+};
+
+type ViewerVM = {
+  layouts: Record&lt;string, Layout&gt;;            // rootKey ("" = 프로젝트 없음) → 레이아웃
+  current: string;                            // 현재 rootKey
+  dragging: { pane: PaneId; key: string } | null;
+  definitions: Definitions | null;            // 분할별로 옮길 수도 있으나 한 번에 하나만 뜨므로 전역 유지
+
+  // 조회 도우미
+  layout(): Layout;  pane(id): Pane | null;  findTab(key): { pane: Pane; tab: ViewerTab } | null;
+
+  // 열기 — target 추가 (F3)
+  open(request, extra?: Extra &amp; { target?: "left" | "focused" | PaneId }): void;
+  openDefault(path): Promise&lt;void&gt;;
+  openWeb(url: string, paneId?: PaneId): Promise&lt;void&gt;;          // F4
+
+  // 분할 (F2)
+  focusPane(id): void;
+  splitWith(key, side: "left" | "right"): void;                   // 분할 1→2, 또는 2개일 때 그 쪽으로 이동
+  moveTab(key, toPane: PaneId, index?: number): void;             // 다른 분할로 / 같은 분할 순서 바꾸기
+  closePane(id): Promise&lt;void&gt;;
+  setRatio(ratio): void;
+  startDrag(pane, key): void;  endDrag(): void;
+
+  // 세션 대화창 (F1) — 현재 레이아웃의 sessionHidden 토글. 세션 행 클릭 때는 showSession() 으로 강제 보임
+  toggleSession(): void;  showSession(): void;
+
+  // 프로젝트 (F5)
+  switchProject(rootKey: string): void;
+  dropProject(rootKey: string): void;                             // 기존 closeUnder 대체
+
+  // 기존: activate / close / closeOthers / closeAll(paneId) / switchMode / 편집 / 정의 이동 — pane 을 찾아 동작
+};
+
+// ViewerTab 추가 필드 (web 탭)
+web?: { id: string; title: string | null; canGoBack: boolean; canGoForward: boolean };</code></pre>
+
+<h3>4.2 설정 파일 (Rust <code>Settings</code>, ts-rs 로 TS 생성)</h3>
+<pre><code>/// 분할 하나. active 는 tabs 의 인덱스.
+pub struct SavedPane { pub tabs: Vec&lt;SavedTab&gt;, pub active: Option&lt;usize&gt; }
+
+/// 프로젝트 하나의 뷰어 레이아웃.
+pub struct SavedLayout {
+    pub panes: Vec&lt;SavedPane&gt;,      // 1 또는 2
+    pub focused: usize,             // panes 인덱스
+    #[serde(default = "default_ratio")] pub ratio: f64,   // 50.0
+    #[serde(default)] pub session_hidden: bool,           // F1. 기본 false(보임)
+}
+
+pub struct Settings {
+    …
+    /// 프로젝트 루트("" 는 프로젝트 없음) → 뷰어 레이아웃. (1.1.0)
+    pub viewer_layouts: BTreeMap&lt;String, SavedLayout&gt;,
+    /// 1.0.x 호환. 읽기만 하고 마이그레이션 뒤 비운다.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")] pub viewer_tabs: Vec&lt;SavedTab&gt;,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub active_tab: Option&lt;usize&gt;,
+}
+
+// ViewerMode 에 Web 추가. SavedTab 은 그대로 (web 탭은 path 에 URL).</code></pre>
+
+<h3>4.3 명령·이벤트</h3>
+<table>
+  <tr><th style="width:260px">이름</th><th>방향</th><th>설명</th></tr>
+  <tr><td class="k"><code>viewer_save_layouts(layouts)</code></td><td>FE → BE</td><td><code>viewer_save_tabs</code> 대체. 터미널 탭은 백엔드가 뺀다(기존 규칙). 빈 레이아웃(탭 0개, 분할 1개)은 저장하지 않는다.</td></tr>
+  <tr><td class="k"><code>viewer_restore_layouts()</code></td><td>FE → BE</td><td><code>viewer_restore_tabs</code> 대체. 없어진 파일·저장소 밖 diff 는 분할마다 <code>keep_tabs</code> 로 걸러 <code>active</code> 를 보정한다. <code>viewer_tabs</code> 가 있고 <code>viewer_layouts</code> 가 비어 있으면 <b>마이그레이션</b>: 각 탭을 경로가 속한 <code>projects[].root</code> 의 레이아웃(단일 분할)으로, 어디에도 안 속하면 <code>""</code> 로. 옛 <code>active_tab</code> 탭이 들어간 분할만 그 탭을 active 로.</td></tr>
+  <tr><td class="k"><code>web_create(id, url, bounds)</code></td><td>FE → BE</td><td>자식 웹뷰 생성(라벨 <code>web-&lt;id&gt;</code>). URL 스킴 검사.</td></tr>
+  <tr><td class="k"><code>web_navigate(id, url)</code> · <code>web_back</code> · <code>web_forward</code> · <code>web_reload</code></td><td>FE → BE</td><td>탐색.</td></tr>
+  <tr><td class="k"><code>web_set_bounds(id, bounds)</code> · <code>web_set_visible(id, bool)</code> · <code>web_close(id)</code></td><td>FE → BE</td><td>배치·표시·제거.</td></tr>
+  <tr><td class="k"><code>web://changed</code> <code>{ id, url, title, canGoBack, canGoForward }</code></td><td>BE → FE</td><td><code>on_navigation</code>·<code>on_page_load</code>·title 변경에서 발행. 프론트가 탭 이름·URL 란·버튼 상태를 갱신하고 저장을 예약한다.</td></tr>
+  <tr><td class="k"><code>terminal_paste()</code> → <code>String</code> · <code>terminal_copy(text)</code></td><td>FE → BE</td><td>F6. 시스템 클립보드 읽기·쓰기(<code>state.clipboard</code>). 터미널 id 는 필요 없다 — 프론트가 받은 글자를 <code>terminal.paste()</code> 로 넣는다.</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="web">5. 인터넷 탭 기술 선택</h2>
+<table>
+  <tr><th style="width:170px"></th><th>A. <code>&lt;iframe src=https://…&gt;</code></th><th>B. Tauri 자식 웹뷰 (<b>권고</b>)</th></tr>
+  <tr><td class="k">사이트 호환</td><td><span class="tag red">나쁨</span> Notion·Google·GitHub 로그인 등 <code>X-Frame-Options</code> / <code>frame-ancestors</code> 로 막는 사이트가 많다. 사용자의 핵심 시나리오(Notion)가 안 된다.</td><td><span class="tag green">좋음</span> 독립 웹뷰라 일반 브라우저와 같다.</td></tr>
+  <tr><td class="k">앱 CSP</td><td><code>frame-src https: http:</code> 를 열어야 한다.</td><td>메인 웹뷰 CSP 변경 없음.</td></tr>
+  <tr><td class="k">보안 경계</td><td>sandbox iframe. 앱 origin 과 분리됨.</td><td>별도 웹뷰, IPC 미주입, capability 권한 없음. 네비게이션 스킴 제한.</td></tr>
+  <tr><td class="k">DOM 과의 관계</td><td>DOM 안에 있어 레이아웃·오버레이가 자연스럽다.</td><td><span class="tag yellow">주의</span> 창 위에 겹치므로 위치를 수동 동기화하고, 메뉴·다이얼로그·드래그 중에는 숨겨야 한다(§3 F4 4.3).</td></tr>
+  <tr><td class="k">구현 비용</td><td>작다.</td><td>Rust 명령 7개 + 이벤트 1개 + 프론트 배치 컴포넌트. <code>tauri</code> 크레이트 <code>unstable</code> 기능 플래그 필요(멀티 웹뷰 API).</td></tr>
+  <tr><td class="k">macOS</td><td>동일.</td><td>Tauri 2 멀티 웹뷰는 Windows·macOS·Linux 모두 지원하지만 <code>unstable</code> 표시. CI 의 macOS 빌드로 동작 확인 필요(§8 R1).</td></tr>
+</table>
+<p><b>결정:</b> B 로 간다. A 는 사용자 시나리오를 만족하지 못한다. B 의 "겹침" 문제는 전역 오버레이 감시 하나로 흡수한다.</p>
+
+<!-- ============================================================ -->
+<h2 id="plan">6. 구현 계획</h2>
+<p>단계마다 빌드·타입 체크·Rust 테스트가 통과하고 앱이 1.0.1 과 같거나 그 이상으로 동작하는 상태를 유지한다. P1 과 P5 는 다른 단계와 독립이다.</p>
+
+<table>
+  <tr><th style="width:60px">단계</th><th style="width:220px">내용</th><th>주요 파일</th><th style="width:70px">크기</th></tr>
+  <tr><td class="k">P0</td><td><b>뷰어 상태 모델 개편</b> (기능 변화 없음). <code>layouts/panes</code> 모델 도입, 분할 1개·<code>""</code> 레이아웃만 쓰는 상태로 기존 동작 재현. <code>ViewerPanel</code> 을 <code>ViewerPanel</code>(분할 배치) + <code>ViewerPane</code>(탭 바·머리글·본문·찾기·정의 목록) 으로 쪼갠다. 저장 포맷 전환 + 마이그레이션 + Rust 테스트.</td><td><code>src/viewmodel/useViewerVM.ts</code>, <code>src/features/viewer/ViewerPanel.tsx</code> → <code>ViewerPane.tsx</code> 신설, <code>src-tauri/src/domain/entity/settings.rs</code>, <code>domain/usecase/viewer/mod.rs</code>(save/restore/migrate), <code>presentation/viewmodel/viewer_vm.rs</code>, <code>di/mod.rs</code>, <code>src/generated/entity/*</code> 재생성</td><td><span class="tag yellow">중간</span></td></tr>
+  <tr><td class="k">P1</td><td><b>F1</b> 세션 대화창 숨김/보이기: 상시 토글 띠(<code>SessionToggle</code>), <code>Panel collapsible</code> 제어, 세션 행 클릭 때 강제 보임, 알림 점. <code>sessionHidden</code> 은 P0 의 레이아웃에 들어가므로 저장·프로젝트별 복원은 P0/P4 가 맡는다.<br><b>F6</b> 터미널 붙여넣기·복사: <code>terminal_paste/terminal_copy</code> 명령, xterm 커스텀 키 핸들러, 우클릭 처리.</td><td><code>src/app/App.tsx</code>(collapsible Panel + ref, 띠 배치), <code>src/app/SessionToggle.tsx</code> 신설, <code>src/features/session/SessionPanel.tsx</code>, <code>src/features/projects/ProjectPanel.tsx</code>(세션 행 클릭 → <code>showSession</code>), <code>useViewerVM.ts</code>, <code>theme.css</code>; <code>src/features/viewer/TerminalView.tsx</code>, <code>src-tauri/src/presentation/viewmodel/terminal_vm.rs</code>, <code>di/mod.rs</code></td><td><span class="tag green">작음</span></td></tr>
+  <tr><td class="k">P2</td><td><b>F2</b> 분할: <code>splitWith/moveTab/closePane/setRatio</code>, 드래그·드롭 오버레이, 탭 바 끝 × , 포커스 표시, 우클릭 메뉴 항목, 빈 분할 자동 닫기, 분할별 찾기/정의 목록.</td><td><code>useViewerVM.ts</code>, <code>ViewerPanel.tsx</code>, <code>ViewerPane.tsx</code>, <code>DropZones.tsx</code> 신설, <code>theme.css</code>, 터미널 인스턴스 보존(<code>TerminalView.tsx</code>, §8 R2)</td><td><span class="tag red">큼</span></td></tr>
+  <tr><td class="k">P3</td><td><b>F3</b> <code>open(..., { target: "left" })</code>; <code>viewer://open</code> 과 세션 패널 링크에 적용. <code>Markdown</code> 에 <code>source</code> prop.</td><td><code>useViewerVM.ts</code>, <code>src/features/viewer/LinkMenu.tsx</code>, <code>Markdown.tsx</code>, <code>src/features/session/ChatItem.tsx</code>, <code>SessionPanel.tsx</code></td><td><span class="tag green">작음</span></td></tr>
+  <tr><td class="k">P4</td><td><b>F5</b> <code>switchProject/dropProject</code>, <code>App.tsx</code> 의 selection effect 연결, 프로젝트 닫기와 연동, 숨은 레이아웃의 터미널·웹뷰 처리.</td><td><code>useViewerVM.ts</code>, <code>src/app/App.tsx</code>, <code>ProjectPanel.tsx</code>(<code>closeProject</code>), <code>ViewerPanel.tsx</code>(숨은 레이아웃의 터미널 DOM 유지)</td><td><span class="tag yellow">중간</span></td></tr>
+  <tr><td class="k">P5</td><td><b>F4</b> 인터넷 탭. Rust: <code>tauri</code> <code>unstable</code> 기능, <code>web_*</code> 명령, <code>web://changed</code> 이벤트, <code>capabilities/web.json</code>. 프론트: <code>openWeb</code>, <code>WebView.tsx</code>(bounds 동기화), 머리글 주소 바, 전역 오버레이 감시 훅 <code>useOverlayOpen</code>, 우클릭 메뉴 항목, 저장·복원.</td><td><code>src-tauri/Cargo.toml</code>, <code>src-tauri/src/presentation/viewmodel/web_vm.rs</code> 신설, <code>di/mod.rs</code>, <code>domain/entity/viewer.rs</code>(<code>Web</code> 모드), <code>src-tauri/capabilities/web.json</code>, <code>src/features/viewer/WebView.tsx</code>, <code>ViewerPane.tsx</code>, <code>useViewerVM.ts</code>, <code>src/app/useOverlayOpen.ts</code></td><td><span class="tag red">큼</span></td></tr>
+  <tr><td class="k">P6</td><td><b>마무리</b>. <code>package.json</code>·<code>Cargo.toml</code>·<code>tauri.conf.json</code> 버전 1.1.0, <code>design/design_v1.1.md</code> 에 구현 메모(실제 Tauri API 확인 결과 포함), Windows·macOS 릴리스 빌드.</td><td>—</td><td><span class="tag green">작음</span></td></tr>
+</table>
+
+<h3>6.1 P0 세부 — 기존 동작을 깨지 않는 선</h3>
+<ul>
+  <li><code>tabKey</code>·<code>makeTab</code>·<code>confirmDiscard</code>·<code>closeTerminals</code>·<code>patchTab</code> 은 그대로 두고 "어느 분할의 탭인가" 만 찾는 단계가 앞에 붙는다.</li>
+  <li>저장 구독(<code>startViewerEvents</code>)은 <code>layouts</code> 가 바뀌면 300ms 뒤 전체를 저장한다. <code>restored</code> 플래그 규칙 유지.</li>
+  <li>복원 중 AI 나 사용자가 먼저 연 탭은 지금처럼 복원된 목록 뒤에 붙인다 — 분할이 둘이면 왼쪽 분할 뒤에.</li>
+  <li>Rust 테스트: <code>save_layouts</code> 가 터미널 탭을 빼는지, <code>restore_layouts</code> 가 분할별로 없어진 파일을 걸러 <code>active</code> 를 맞추는지, 1.0.x <code>viewer_tabs</code> 마이그레이션이 프로젝트별로 나뉘고 <code>""</code> 로 떨어지는지, 저장 뒤 <code>viewer_tabs</code> 가 비워지는지.</li>
+</ul>
+
+<h3>6.2 P5 세부 — 확인하며 진행할 것</h3>
+<ol>
+  <li><code>tauri = { version = "2", features = ["protocol-asset", "unstable"] }</code> 로 바꾸고 <code>Window::add_child(WebviewBuilder::new(label, WebviewUrl::External(url)), position, size)</code> 가 Windows 에서 동작하는지 먼저 스파이크로 확인한다.</li>
+  <li><code>WebviewBuilder::on_navigation</code> 으로 스킴 제한. 새 창 요청 처리 API(<code>on_new_window</code> 등)는 현재 Tauri 버전에서 이름·지원 여부를 확인하고, 없으면 "새 창 링크는 외부 브라우저로" 로 대체한다.</li>
+  <li>title 변경 이벤트가 없으면 <code>on_page_load</code> 에서 <code>eval("document.title")</code> 로 받는 대신 — 원격 페이지에 스크립트를 넣지 않는 원칙에 따라 — URL 호스트명만 쓴다.</li>
+  <li>macOS 빌드는 CI(GitHub Actions)에서 컴파일만 확인 가능하다. 실행 확인은 사용자가 한다(§8 R1).</li>
+</ol>
+
+<!-- ============================================================ -->
+<h2 id="test">7. 검증</h2>
+<ul>
+  <li><b>자동:</b> <code>npm run typecheck</code>, <code>cargo test</code>(ts-rs 생성 포함, <code>/build</code> 스킬 절차), 릴리스 빌드.</li>
+  <li><b>수동 시나리오</b> — 각 기능의 수용 기준 전부 + 아래 통합 시나리오.</li>
+</ul>
+<table>
+  <tr><th style="width:40px">#</th><th>시나리오</th><th>기대</th></tr>
+  <tr><td>S1</td><td>A 프로젝트: spec.docx 를 왼쪽, 인터넷 탭(Notion)을 오른쪽에 두고 Notion 에 로그인. B 프로젝트 클릭 → design.md 열고 세션에 지시 → A 클릭.</td><td>A 의 두 분할·탭·Notion 로그인·스크롤 그대로. B 는 단일 화면 design.md.</td></tr>
+  <tr><td>S2</td><td>S1 상태에서 A 세션의 AI 가 <code>&lt;viewer open="README.md" mode="markdown"/&gt;</code>.</td><td>왼쪽 분할에 README 미리보기 활성. 오른쪽 Notion 과 포커스 변화 없음.</td></tr>
+  <tr><td>S3</td><td>앱 종료 후 재실행, A 와 B 를 번갈아 클릭.</td><td>S1 과 같은 레이아웃. 터미널 탭만 없음(기존 규칙).</td></tr>
+  <tr><td>S4</td><td>1.0.1 의 settings.json 으로 1.1.0 실행.</td><td>옛 탭이 프로젝트별 레이아웃으로 분배되어 보이고, 저장 뒤 <code>viewerTabs</code> 키가 사라진다.</td></tr>
+  <tr><td>S5</td><td>인터넷 탭이 활성인 분할 위에서 트리 우클릭, 설정 창, 탭 드래그.</td><td>웹뷰가 메뉴·창·드롭 영역을 가리지 않고, 닫히면 다시 보인다.</td></tr>
+  <tr><td>S6</td><td>터미널 탭을 오른쪽 분할로 끌고, 다른 프로젝트에 다녀온 뒤 돌아온다.</td><td>셸이 살아 있고 스크롤백·입력 유지.</td></tr>
+  <tr><td>S7</td><td>A 에서 대화창 숨김, B 는 보임으로 두고 재실행 → A 클릭 → 띠의 <code>›</code> 클릭 → B 클릭.</td><td>A 는 숨김으로 열리고, 띠를 누르면 보이며 입력 중이던 초안이 남아 있다. B 는 처음부터 보임.</td></tr>
+  <tr><td>S8</td><td>두 줄 텍스트를 복사해 PowerShell · git bash 터미널 탭에 <kbd>Ctrl+V</kbd>, <kbd>Shift+Insert</kbd>, 우클릭으로 붙인다. 출력 일부를 선택해 <kbd>Ctrl+C</kbd>, 선택 없이 <kbd>Ctrl+C</kbd>.</td><td>세 방법 모두 붙는다. 선택 복사는 클립보드에 들어가고 셸은 안 끊긴다. 선택 없는 <kbd>Ctrl+C</kbd> 는 명령을 중단한다.</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="risk">8. 제약과 리스크</h2>
+<table>
+  <tr><th style="width:50px">ID</th><th>리스크</th><th>대응</th></tr>
+  <tr><td class="k">R1</td><td>Tauri 멀티 웹뷰가 <code>unstable</code> 기능 뒤에 있다. macOS 에서 자식 웹뷰 배치·숨김이 Windows 와 다를 수 있다.</td><td>P5 를 마지막에 두고 Windows 스파이크로 먼저 검증. macOS 는 사용자가 릴리스 빌드로 확인. 문제가 크면 인터넷 탭만 1.1.1 로 미룬다.</td></tr>
+  <tr><td class="k">R2</td><td>탭을 다른 분할로 옮기거나 프로젝트를 전환하면 <code>TerminalView</code> 가 재마운트되어 xterm 스크롤백이 사라진다.</td><td>지금처럼 터미널 DOM 은 <code>ViewerPanel</code> 최상위에서 전부 마운트해 두고(숨김 포함, 모든 레이아웃의 터미널), 활성인 것만 해당 분할 본문 위치에 절대 배치한다. 또는 xterm 인스턴스를 모듈 맵에 두고 <code>open(el)</code> 대신 DOM 노드를 옮긴다.</td></tr>
+  <tr><td class="k">R3</td><td>자식 웹뷰가 DOM 오버레이(메뉴·다이얼로그·드롭 영역·토스트)를 덮는다.</td><td>§3 F4 4.3 의 전역 <code>MutationObserver</code> 숨김 + 드래그 중 숨김. 토스트는 오른쪽 위라 겹칠 수 있으므로 토스트 영역을 z-order 가 아닌 위치로 피한다(뷰어 밖 상단).</td></tr>
+  <tr><td class="k">R4</td><td>설정 파일 포맷 변경. 1.1.0 으로 저장한 settings.json 을 1.0.1 로 다시 열면 레이아웃이 보이지 않는다(필드만 무시되므로 깨지지는 않음).</td><td>마이그레이션은 한 방향. 릴리스 노트에 적는다.</td></tr>
+  <tr><td class="k">R5</td><td>HTML5 DnD 는 드래그 중 커서 미리보기(고스트)가 플랫폼마다 다르고, WebView2 에서 <code>dragover</code> 가 과다 발생한다.</td><td>드롭 영역 계산을 <code>requestAnimationFrame</code> 으로 묶는다. 고스트는 기본 이미지 사용.</td></tr>
+  <tr><td class="k">R6</td><td>탭 키 유일성 때문에 "같은 파일을 양쪽에서 비교" 는 불가.</td><td>의도된 제한. 필요하면 1.2 에서 탭 키에 분할 id 를 넣고 버퍼를 탭 단위로 분리.</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="open">9. 열어 둔 결정 (기본값으로 진행)</h2>
+<p>아래는 요청에 명시되지 않아 기본값을 정해 두었다. 다르게 원하면 알려 주면 되고, 구현 전에 바꾸는 비용은 작다.</p>
+<table>
+  <tr><th style="width:40px">#</th><th>항목</th><th style="width:280px">기본값</th><th>대안</th></tr>
+  <tr><td>Q1</td><td>분할 최대 개수</td><td><b>2 (좌·우)</b></td><td>VS Code 처럼 무제한 / 상하 분할. 요청이 좌·우만 언급해 2 로 고정.</td></tr>
+  <tr><td>Q2</td><td>같은 탭을 두 분할에 동시에</td><td><b>불허, 합침</b></td><td>허용(버퍼 분리 필요, R6).</td></tr>
+  <tr><td>Q3</td><td>탭이 0개가 된 분할</td><td><b>자동 닫기</b>(분할이 둘일 때)</td><td>빈 분할 유지.</td></tr>
+  <tr><td>Q4</td><td>트리·링크 등 사용자가 여는 탭의 목적지</td><td><b>포커스된 분할</b></td><td>항상 오른쪽 / 항상 왼쪽.</td></tr>
+  <tr><td>Q5</td><td>세션 출처 열기가 포커스를 옮기는가</td><td><b>옮기지 않음</b>(왼쪽에서 활성만)</td><td>왼쪽으로 포커스 이동.</td></tr>
+  <tr><td>Q6</td><td>인터넷 탭 URL 에 스킴이 없을 때</td><td><b><code>https://</code> 를 붙임</b></td><td>점(.)이 없으면 검색 엔진으로.</td></tr>
+  <tr><td>Q7</td><td>인터넷 탭 구현</td><td><b>Tauri 자식 웹뷰</b></td><td>iframe(Notion 불가).</td></tr>
+  <tr><td>Q8</td><td>프로젝트 미선택 상태의 탭</td><td><b><code>""</code> 레이아웃</b>에 둔다</td><td>프로젝트 없이는 열기 금지.</td></tr>
+  <tr><td>Q9</td><td>대화창 토글 위치</td><td><b>대화창 왼쪽의 상시 12px 띠 하나</b>(§3 F1 1.1)</td><td>상단 연결 바 버튼 / 리사이즈 핸들 위 꼭지.</td></tr>
+  <tr><td>Q10</td><td>문서 파일 이름</td><td><b><code>requirement_v1.1.0.html</code></b>(기존 <code>requirement_v0.md</code> 와 같은 밑줄 규칙)</td><td>요청 그대로 공백 포함 <code>requirement v1.1.0.html</code>.</td></tr>
+  <tr><td>Q11</td><td>대화창 토글 단축키</td><td><b>없음</b></td><td><kbd>Ctrl+B</kbd> 등. 터미널 탭이 포커스일 때는 셸로 보내지 않고 가로채야 해서 규칙이 하나 더 생긴다.</td></tr>
+  <tr><td>Q12</td><td>세션 행 클릭 때 대화창 자동 보이기</td><td><b>예</b>(저장값도 "보임" 으로)</td><td>저장값 유지, 사용자가 직접 펼침.</td></tr>
+  <tr><td>Q13</td><td>터미널 우클릭</td><td><b>선택 있으면 복사, 없으면 붙여넣기</b>(Windows Terminal 관례)</td><td>복사/붙여넣기 컨텍스트 메뉴.</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="nonscope">10. 범위 밖 (v1.1.0 에 넣지 않음)</h2>
+<ul>
+  <li>상하 분할, 3개 이상 분할, 분할 안 분할.</li>
+  <li>탭을 뷰어 밖(세션 패널·트리)으로 끌기, 탭을 새 창으로 떼어내기.</li>
+  <li>인터넷 탭의 북마크·탭 복제·개발자 도구·다운로드 처리·인터넷 데이터(쿠키) 지우기 설정.</li>
+  <li>인터넷 탭 안 페이지와 AI 의 연동(페이지 내용을 세션에 보내기 등).</li>
+  <li>세션별(프로젝트 아래 세션 단위) 레이아웃. 바인딩 단위는 프로젝트다.</li>
+  <li>프로젝트 패널의 드래그 정렬.</li>
+</ul>
+
+</main>
+</body>
+</html>

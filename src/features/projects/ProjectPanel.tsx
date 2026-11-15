@@ -25,7 +25,7 @@ export function ProjectPanel() {
 
   const closeProject = async (root: string) => {
     await close(root);
-    useViewerVM.getState().closeUnder(root);
+    useViewerVM.getState().dropProject(root);
   };
 
   return (
@@ -73,7 +73,11 @@ export function ProjectPanel() {
                       <div
                         key={session.id}
                         className={`row session ${selection?.sessionId === session.id ? "selected" : ""}`}
-                        onClick={() => select({ root: project.root, sessionId: session.id })}
+                        onClick={() => {
+                          // 세션을 고르면 보겠다는 뜻이므로 접어 둔 대화창을 편다.
+                          useViewerVM.getState().showSession(project.root);
+                          select({ root: project.root, sessionId: session.id });
+                        }}
                         onContextMenu={() => setTarget({ kind: "session", project, session })}
                       >
                         <span className="ico claude">
@@ -116,7 +120,10 @@ export function ProjectPanel() {
                 <>
                   <ContextMenu.Item
                     className="it"
-                    onSelect={() => select({ root: target.project.root, sessionId: target.session.id })}
+                    onSelect={() => {
+                      useViewerVM.getState().showSession(target.project.root);
+                      select({ root: target.project.root, sessionId: target.session.id });
+                    }}
                   >
                     Session 열기
                   </ContextMenu.Item>

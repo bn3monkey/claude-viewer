@@ -18,6 +18,6 @@ pub use error::AppError;
 pub use fs_node::{FsKind, FsNode};
 pub use project::Project;
 pub use session::{Session, SessionState};
-pub use settings::{ProjectEntry, SavedTab, Settings};
+pub use settings::{ProjectEntry, SavedLayout, SavedPane, SavedTab, Settings};
 pub use subagent::SubagentRun;
 pub use viewer::{DefinitionHit, LinkTarget, TextContent, ViewerMode, ViewerRequest};

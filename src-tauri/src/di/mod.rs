@@ -16,7 +16,7 @@ use crate::data::repository::{
 use crate::infrastructure::platform::{self, Platform};
 use crate::presentation::state::AppState;
 use crate::presentation::viewmodel::{
-    connection_vm, git_vm, project_vm, session_vm, terminal_vm, tree_vm, viewer_vm,
+    connection_vm, git_vm, project_vm, session_vm, terminal_vm, tree_vm, viewer_vm, web_vm,
 };
 
 pub fn run() {
@@ -74,8 +74,8 @@ pub fn run() {
             tree_vm::tree_run,
             viewer_vm::viewer_resolve_mode,
             viewer_vm::viewer_resolve_link,
-            viewer_vm::viewer_save_tabs,
-            viewer_vm::viewer_restore_tabs,
+            viewer_vm::viewer_save_layouts,
+            viewer_vm::viewer_restore_layouts,
             viewer_vm::viewer_read_text,
             viewer_vm::viewer_read_bytes,
             viewer_vm::viewer_write_text,
@@ -97,6 +97,15 @@ pub fn run() {
             terminal_vm::terminal_write,
             terminal_vm::terminal_resize,
             terminal_vm::terminal_close,
+            terminal_vm::terminal_paste,
+            terminal_vm::terminal_copy,
+            web_vm::web_show,
+            web_vm::web_set_bounds,
+            web_vm::web_hide,
+            web_vm::web_close,
+            web_vm::web_navigate,
+            web_vm::web_reload,
+            web_vm::web_history,
             terminal_vm::terminal_paths,
             terminal_vm::terminal_save_paths,
         ])

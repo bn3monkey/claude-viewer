@@ -9,7 +9,7 @@ import { findSession, useProjectVM } from "../../viewmodel/useProjectVM";
 import { compactStep, summarizeUsage, useSessionVM } from "../../viewmodel/useSessionVM";
 import { useSubagentVM } from "../../viewmodel/useSubagentVM";
 import { useTreeVM } from "../../viewmodel/useTreeVM";
-import { LinkBase } from "../viewer/Markdown";
+import { LinkBase, LinkOpenTarget } from "../viewer/Markdown";
 import { AgentTabs, SubagentSummary } from "./AgentTabs";
 import { ChatItem } from "./ChatItem";
 import { UsageBar } from "./UsageBar";
@@ -133,6 +133,7 @@ export function SessionPanel() {
       <PanelGroup direction="vertical" autoSaveId="layout-session">
         <Panel defaultSize={75} minSize={20}>
           <div className="chat-wrap">
+            <LinkOpenTarget.Provider value="left">
             <LinkBase.Provider value={project.root}>
               {/* 세션·탭마다 새로 그려 맨 아래에서 시작한다. */}
               {tabRun ? (
@@ -148,6 +149,7 @@ export function SessionPanel() {
                 <ChatList key={session.id} events={events} spinner={session.busy && pendingCount === 0} sessionId={session.id} />
               )}
             </LinkBase.Provider>
+            </LinkOpenTarget.Provider>
           </div>
         </Panel>
         <PanelResizeHandle className="resize-v" />

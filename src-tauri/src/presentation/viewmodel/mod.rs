@@ -7,6 +7,7 @@ pub mod session_vm;
 pub mod terminal_vm;
 pub mod tree_vm;
 pub mod viewer_vm;
+pub mod web_vm;
 
 pub const EVENT_PROJECT_CHANGED: &str = "project://changed";
 pub const EVENT_TREE_CHANGED: &str = "tree://changed";

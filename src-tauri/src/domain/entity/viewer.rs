@@ -17,6 +17,8 @@ pub enum ViewerMode {
     Diff,
     /// 파일을 실행 중인 터미널. 프론트가 터미널 세션을 탭에 따로 둔다.
     Terminal,
+    /// 인터넷 탭. path 에 http(s) URL 을 담고 자식 웹뷰로 띄운다.
+    Web,
 }
 
 /// 뷰어 탭은 (path, mode) 쌍으로 식별한다.

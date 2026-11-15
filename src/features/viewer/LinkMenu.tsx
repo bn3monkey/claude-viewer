@@ -7,7 +7,7 @@ import type { ViewerMode } from "../../generated/entity/ViewerMode";
 import { call } from "../../viewmodel/invoke";
 import { IS_WINDOWS, launchTerminal, runDefault, TERMINAL_MENU } from "../../viewmodel/useTerminalVM";
 import { useTreeVM } from "../../viewmodel/useTreeVM";
-import { resolveLink, useViewerVM } from "../../viewmodel/useViewerVM";
+import { resolveLink, useViewerVM, type OpenTarget } from "../../viewmodel/useViewerVM";
 
 const extensionOf = (path: string) => path.split(/[\\/]/).pop()?.split(".").pop()?.toLowerCase() ?? "";
 const RUNNABLE = ["exe", "bat", "cmd", "ps1", "sh", "bash"];
@@ -20,15 +20,17 @@ export function previewModeOf(path: string): ViewerMode | null {
   return null;
 }
 
-const openTarget = (target: LinkTarget, mode?: ViewerMode) =>
-  useViewerVM.getState().open(mode ? { ...target.request, mode } : target.request, { line: target.line ?? undefined });
+const openTargetIn = (target: LinkTarget, mode: ViewerMode | undefined, where: OpenTarget) =>
+  useViewerVM
+    .getState()
+    .open(mode ? { ...target.request, mode } : target.request, { line: target.line ?? undefined }, { target: where });
 
-/** 링크 왼쪽 클릭: .exe 는 바로 실행, 나머지는 뷰어 탭으로. */
-export async function activateLink(baseDir: string, href: string) {
+/** 링크 왼쪽 클릭: .exe 는 바로 실행, 나머지는 뷰어 탭으로. 세션 대화의 링크는 왼쪽 분할에 연다. */
+export async function activateLink(baseDir: string, href: string, where: OpenTarget = "focused") {
   const target = await resolveLink(baseDir, href);
   if (!target) return;
   if (extensionOf(target.request.path) === "exe") await useTreeVM.getState().run(target.request.path);
-  else openTarget(target);
+  else openTargetIn(target, undefined, where);
 }
 
 /** 이 플랫폼에서 경로가 잡힌(설정 또는 자동 감지) 터미널만. */
@@ -45,7 +47,17 @@ const terminalLabel = (kind: TerminalKind) =>
   TERMINAL_MENU.find((t) => t.kind === kind)!.label.replace(/\s*\(.*\)$/, "");
 
 /** 대화·마크다운 속 파일 링크의 우클릭 메뉴. 메뉴를 열 때 링크를 풀어 파일 종류에 맞는 항목을 보여 준다. */
-export function LinkMenu({ baseDir, href, children }: { baseDir: string; href: string; children: ReactNode }) {
+export function LinkMenu({
+  baseDir,
+  href,
+  where = "focused",
+  children,
+}: {
+  baseDir: string;
+  href: string;
+  where?: OpenTarget;
+  children: ReactNode;
+}) {
   const [menu, setMenu] = useState<{ target: LinkTarget | null; terminals: TerminalKind[] } | null>(null);
 
   const load = async () => {
@@ -68,7 +80,7 @@ export function LinkMenu({ baseDir, href, children }: { baseDir: string; href: s
               열 수 없는 링크입니다
             </ContextMenu.Item>
           ) : (
-            <TargetItems target={menu.target} terminals={menu.terminals} />
+            <TargetItems target={menu.target} terminals={menu.terminals} where={where} />
           )}
         </ContextMenu.Content>
       </ContextMenu.Portal>
@@ -76,7 +88,8 @@ export function LinkMenu({ baseDir, href, children }: { baseDir: string; href: s
   );
 }
 
-function TargetItems({ target, terminals }: { target: LinkTarget; terminals: TerminalKind[] }) {
+function TargetItems({ target, terminals, where }: { target: LinkTarget; terminals: TerminalKind[]; where: OpenTarget }) {
+  const openTarget = (t: LinkTarget, mode?: ViewerMode) => openTargetIn(t, mode, where);
   const path = target.request.path;
   const ext = extensionOf(path);
   const preview = previewModeOf(path);

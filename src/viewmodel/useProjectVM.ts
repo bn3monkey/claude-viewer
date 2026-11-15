@@ -4,6 +4,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import type { Project } from "../generated/entity/Project";
 import type { Session } from "../generated/entity/Session";
 import { call } from "./invoke";
+import { useViewerVM } from "./useViewerVM";
 
 export type Selection = { root: string; sessionId: string | null };
 
@@ -58,11 +59,14 @@ export const useProjectVM = create<ProjectVM>((set, get) => ({
 
   startSession: async (root) => {
     const id = await call<string>("session_start", { root });
-    if (id) set({ selection: { root, sessionId: id } });
+    if (!id) return;
+    useViewerVM.getState().showSession(root);
+    set({ selection: { root, sessionId: id } });
   },
 
   resumeSession: async (root, id) => {
     if ((await call("session_resume", { root, id })) === undefined) return;
+    useViewerVM.getState().showSession(root);
     set({ selection: { root, sessionId: id } });
   },
 
@@ -92,6 +96,21 @@ export function startProjectEvents() {
     unlisten.then((f) => f());
     clearInterval(timer);
   };
+}
+
+const normalizePath = (path: string) => path.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+
+/** 경로가 속한 열린 프로젝트의 루트. 여럿이면 가장 깊은 것, 없으면 undefined. */
+export function projectRootOf(path: string): string | undefined {
+  const target = normalizePath(path);
+  return useProjectVM
+    .getState()
+    .projects.map((p) => p.root)
+    .filter((root) => {
+      const r = normalizePath(root);
+      return target === r || target.startsWith(`${r}/`);
+    })
+    .sort((a, b) => b.length - a.length)[0];
 }
 
 export function findSession(projects: Project[], selection: Selection | null) {

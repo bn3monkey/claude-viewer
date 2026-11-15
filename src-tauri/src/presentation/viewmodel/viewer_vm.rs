@@ -2,7 +2,9 @@ use tauri::http;
 use tauri::ipc::Response;
 use tauri::{AppHandle, Manager, State};
 
-use crate::domain::entity::{AppError, DefinitionHit, LinkTarget, SavedTab, TextContent, ViewerMode};
+use std::collections::BTreeMap;
+
+use crate::domain::entity::{AppError, DefinitionHit, LinkTarget, SavedLayout, TextContent, ViewerMode};
 use crate::domain::usecase::viewer;
 use crate::presentation::state::AppState;
 
@@ -17,15 +19,16 @@ pub fn viewer_resolve_link(state: State<'_, AppState>, base_dir: String, href: S
     viewer::resolve_link(&*state.fs, &*state.settings, &base_dir, &href)
 }
 
+/// 프로젝트 루트("" 는 프로젝트 없음) → 뷰어 레이아웃.
 #[tauri::command(async)]
-pub fn viewer_save_tabs(state: State<'_, AppState>, tabs: Vec<SavedTab>, active: Option<usize>) -> Result<(), AppError> {
-    viewer::save_tabs(&*state.settings, &tabs, active)
+pub fn viewer_save_layouts(state: State<'_, AppState>, layouts: BTreeMap<String, SavedLayout>) -> Result<(), AppError> {
+    viewer::save_layouts(&*state.settings, &layouts)
 }
 
-/// 앱 시작 때 되살릴 탭과 활성 탭 위치.
+/// 앱 시작 때 되살릴 프로젝트별 레이아웃. 1.0.x 의 탭 목록은 여기서 옮겨진다.
 #[tauri::command(async)]
-pub fn viewer_restore_tabs(state: State<'_, AppState>) -> (Vec<SavedTab>, Option<usize>) {
-    viewer::restore_tabs(&*state.fs, &*state.settings)
+pub fn viewer_restore_layouts(state: State<'_, AppState>) -> BTreeMap<String, SavedLayout> {
+    viewer::restore_layouts(&*state.fs, &*state.settings)
 }
 
 #[tauri::command(async)]

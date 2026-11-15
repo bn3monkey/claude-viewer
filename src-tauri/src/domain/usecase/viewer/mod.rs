@@ -1,7 +1,10 @@
+use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
 
 use super::project::ensure_within_project;
-use crate::domain::entity::{AppError, DefinitionHit, LinkTarget, SavedTab, TextContent, ViewerMode, ViewerRequest};
+use crate::domain::entity::{
+    AppError, DefinitionHit, LinkTarget, SavedLayout, SavedPane, SavedTab, TextContent, ViewerMode, ViewerRequest,
+};
 use crate::domain::repository::{FileSystemRepository, SettingsRepository, ShellRepository};
 
 /// `--append-system-prompt` 로 전달해 AI 가 File Viewer 지시문을 알게 한다.
@@ -260,24 +263,110 @@ pub fn percent_decode(text: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-/// 열린 탭을 저장한다. 터미널 탭은 되살릴 수 없으므로 빼고, 활성 위치도 그에 맞춘다.
-pub fn save_tabs(settings: &dyn SettingsRepository, tabs: &[SavedTab], active: Option<usize>) -> Result<(), AppError> {
-    let (kept, active) = keep_tabs(tabs, active, |tab| tab.mode != ViewerMode::Terminal);
+/// 프로젝트별 뷰어 레이아웃을 저장한다. 터미널 탭은 되살릴 수 없으므로 빼고 활성 위치를 맞춘다.
+/// 탭도 없고 대화창도 보이는 기본 상태의 레이아웃은 저장하지 않는다. 1.0.x 의 탭 목록은 비운다.
+pub fn save_layouts(settings: &dyn SettingsRepository, layouts: &BTreeMap<String, SavedLayout>) -> Result<(), AppError> {
+    let kept: BTreeMap<String, SavedLayout> = layouts
+        .iter()
+        .map(|(root, layout)| (root.clone(), filter_layout(layout, |tab| tab.mode != ViewerMode::Terminal)))
+        .filter(|(_, layout)| !is_blank(layout))
+        .collect();
     settings.update(&mut |s| {
-        s.viewer_tabs = kept.clone();
-        s.active_tab = active;
+        s.viewer_layouts = kept.clone();
+        s.viewer_tabs.clear();
+        s.active_tab = None;
     })?;
     Ok(())
 }
 
-/// 저장된 탭 중 지금도 열 수 있는 것. 사라진 파일이나 닫힌 프로젝트의 탭은 건너뛴다.
-/// diff 탭은 지워진 파일도 보여 줄 수 있으므로 프로젝트가 열려 있는지만 본다.
-pub fn restore_tabs(fs: &dyn FileSystemRepository, settings: &dyn SettingsRepository) -> (Vec<SavedTab>, Option<usize>) {
-    let saved = settings.load();
-    keep_tabs(&saved.viewer_tabs, saved.active_tab, |tab| match &tab.diff {
-        Some(diff) => saved.projects.iter().any(|p| p.root == diff.root),
-        None => tab.mode != ViewerMode::Terminal && ensure_within_project(fs, settings, &tab.path).is_ok(),
-    })
+/// 저장된 레이아웃 중 지금도 열 수 있는 탭만 남긴다. 사라진 파일·닫힌 프로젝트의 탭은 건너뛰고,
+/// diff 탭은 지워진 파일도 보여 줄 수 있으므로 프로젝트가 열려 있는지만 본다. 인터넷 탭은 URL 만 검사한다.
+/// 1.0.x 설정(viewer_tabs)만 있으면 탭을 경로가 속한 프로젝트의 레이아웃으로 나눠 옮기고 바로 저장한다.
+pub fn restore_layouts(fs: &dyn FileSystemRepository, settings: &dyn SettingsRepository) -> BTreeMap<String, SavedLayout> {
+    let mut saved = settings.load();
+    if saved.viewer_layouts.is_empty() && !saved.viewer_tabs.is_empty() {
+        let migrated = migrate_tabs(fs, &saved.projects.iter().map(|p| p.root.clone()).collect::<Vec<_>>(), &saved.viewer_tabs, saved.active_tab);
+        if let Ok(updated) = settings.update(&mut |s| {
+            s.viewer_layouts = migrated.clone();
+            s.viewer_tabs.clear();
+            s.active_tab = None;
+        }) {
+            saved = updated;
+        } else {
+            saved.viewer_layouts = migrated;
+        }
+    }
+    saved
+        .viewer_layouts
+        .iter()
+        .filter(|(root, _)| root.is_empty() || saved.projects.iter().any(|p| &p.root == *root))
+        .map(|(root, layout)| {
+            let layout = filter_layout(layout, |tab| match (&tab.diff, tab.mode) {
+                (Some(diff), _) => saved.projects.iter().any(|p| p.root == diff.root),
+                (None, ViewerMode::Terminal) => false,
+                (None, ViewerMode::Web) => is_web_url(&tab.path),
+                (None, _) => ensure_within_project(fs, settings, &tab.path).is_ok(),
+            });
+            (root.clone(), layout)
+        })
+        .filter(|(_, layout)| !is_blank(layout))
+        .collect()
+}
+
+/// 1.0.x 의 단일 탭 목록을 프로젝트별 단일 분할 레이아웃으로 나눈다. 어느 프로젝트에도 속하지 않으면 "".
+fn migrate_tabs(
+    fs: &dyn FileSystemRepository,
+    roots: &[String],
+    tabs: &[SavedTab],
+    active: Option<usize>,
+) -> BTreeMap<String, SavedLayout> {
+    let canonical_roots: Vec<(String, PathBuf)> =
+        roots.iter().filter_map(|r| fs.canonicalize(r).ok().map(|c| (r.clone(), c))).collect();
+    let owner = |tab: &SavedTab| -> String {
+        if let Some(diff) = &tab.diff {
+            return diff.root.clone();
+        }
+        fs.canonicalize(&tab.path)
+            .ok()
+            .and_then(|path| canonical_roots.iter().find(|(_, root)| path.starts_with(root)).map(|(r, _)| r.clone()))
+            .unwrap_or_default()
+    };
+    let mut layouts: BTreeMap<String, SavedLayout> = BTreeMap::new();
+    for (i, tab) in tabs.iter().enumerate() {
+        let pane = &mut layouts.entry(owner(tab)).or_default().panes[0];
+        pane.tabs.push(tab.clone());
+        if Some(i) == active || pane.active.is_none() {
+            pane.active = Some(pane.tabs.len() - 1);
+        }
+    }
+    layouts
+}
+
+/// 분할마다 조건에 맞는 탭만 남기고, 분할이 둘인데 하나가 비면 그 분할을 없앤다.
+fn filter_layout(layout: &SavedLayout, keep: impl Fn(&SavedTab) -> bool) -> SavedLayout {
+    let panes: Vec<SavedPane> = layout
+        .panes
+        .iter()
+        .take(2)
+        .map(|pane| {
+            let (tabs, active) = keep_tabs(&pane.tabs, pane.active, &keep);
+            SavedPane { tabs, active }
+        })
+        .collect();
+    let focused = layout.focused.min(panes.len().saturating_sub(1));
+    let non_empty: Vec<SavedPane> = panes.iter().filter(|p| !p.tabs.is_empty()).cloned().collect();
+    let (panes, focused) = match non_empty.len() {
+        0 => (vec![SavedPane::default()], 0),
+        n if n == panes.len() => (panes, focused),
+        // 분할 하나가 비어 사라졌다. 남은 하나가 포커스를 받는다.
+        _ => (non_empty, 0),
+    };
+    let ratio = if layout.ratio.is_finite() { layout.ratio.clamp(20.0, 80.0) } else { 50.0 };
+    SavedLayout { panes, focused, ratio, session_hidden: layout.session_hidden }
+}
+
+fn is_blank(layout: &SavedLayout) -> bool {
+    !layout.session_hidden && layout.panes.iter().all(|p| p.tabs.is_empty())
 }
 
 /// 조건에 맞는 탭만 남긴다. 활성 탭이 빠지면 그 앞의 탭을 활성으로 한다.
@@ -664,20 +753,54 @@ mod tests {
         SavedTab { path: path.into(), mode, diff: None }
     }
 
+    fn single(tabs: Vec<SavedTab>, active: Option<usize>) -> SavedLayout {
+        SavedLayout { panes: vec![SavedPane { tabs, active }], ..SavedLayout::default() }
+    }
+
+    fn layouts(entries: Vec<(&str, SavedLayout)>) -> BTreeMap<String, SavedLayout> {
+        entries.into_iter().map(|(k, v)| (k.to_string(), v)).collect()
+    }
+
     #[test]
-    fn saving_tabs_drops_terminals_and_keeps_the_active_one() {
+    fn saving_layouts_drops_terminals_and_keeps_the_active_one() {
         let settings = FakeSettings::with_project("/p", &[]);
-        let tabs = [tab("/p/a.rs", ViewerMode::Source), tab("/p/run.bat", ViewerMode::Terminal), tab("/p/b.md", ViewerMode::Markdown)];
-        save_tabs(&settings, &tabs, Some(2)).unwrap();
-        let saved = settings.load();
-        assert_eq!(saved.viewer_tabs, vec![tabs[0].clone(), tabs[2].clone()]);
-        assert_eq!(saved.active_tab, Some(1));
+        let tabs = vec![tab("/p/a.rs", ViewerMode::Source), tab("/p/run.bat", ViewerMode::Terminal), tab("/p/b.md", ViewerMode::Markdown)];
+        save_layouts(&settings, &layouts(vec![("/p", single(tabs.clone(), Some(2)))])).unwrap();
+        let saved = &settings.load().viewer_layouts["/p"].panes[0];
+        assert_eq!(saved.tabs, vec![tabs[0].clone(), tabs[2].clone()]);
+        assert_eq!(saved.active, Some(1));
 
         // 활성 탭이 터미널이면 그 앞 탭을 활성으로.
-        save_tabs(&settings, &tabs, Some(1)).unwrap();
-        assert_eq!(settings.load().active_tab, Some(0));
-        save_tabs(&settings, &[], None).unwrap();
-        assert_eq!(settings.load().active_tab, None);
+        save_layouts(&settings, &layouts(vec![("/p", single(tabs.clone(), Some(1)))])).unwrap();
+        assert_eq!(settings.load().viewer_layouts["/p"].panes[0].active, Some(0));
+    }
+
+    #[test]
+    fn saving_skips_blank_layouts_but_keeps_a_hidden_session() {
+        let settings = FakeSettings::with_project("/p", &[]);
+        let hidden = SavedLayout { session_hidden: true, ..SavedLayout::default() };
+        let only_terminal = single(vec![tab("/q/run.bat", ViewerMode::Terminal)], Some(0));
+        save_layouts(&settings, &layouts(vec![("", SavedLayout::default()), ("/p", hidden.clone()), ("/q", only_terminal)])).unwrap();
+        assert_eq!(settings.load().viewer_layouts, layouts(vec![("/p", hidden)]));
+    }
+
+    #[test]
+    fn a_split_whose_pane_empties_collapses_to_one_pane() {
+        let settings = FakeSettings::with_project("/p", &[]);
+        let layout = SavedLayout {
+            panes: vec![
+                SavedPane { tabs: vec![tab("/p/run.bat", ViewerMode::Terminal)], active: Some(0) },
+                SavedPane { tabs: vec![tab("/p/a.rs", ViewerMode::Source)], active: Some(0) },
+            ],
+            focused: 1,
+            ratio: 95.0,
+            session_hidden: false,
+        };
+        save_layouts(&settings, &layouts(vec![("/p", layout)])).unwrap();
+        let saved = &settings.load().viewer_layouts["/p"];
+        assert_eq!(saved.panes.len(), 1);
+        assert_eq!(saved.focused, 0);
+        assert_eq!(saved.ratio, 80.0);
     }
 
     #[test]
@@ -693,15 +816,47 @@ mod tests {
             diff: Some(crate::domain::entity::settings::SavedDiff { root: "/q".into(), branch: None, untracked: false, commit: None }),
             ..tab("/q/x.rs", ViewerMode::Diff)
         };
-        let tabs = vec![tab("/p/a.rs", ViewerMode::Source), tab("/secret/k.pem", ViewerMode::Source), deleted_diff.clone(), other_diff];
-        settings.update(&mut |s| {
-            s.viewer_tabs = tabs.clone();
-            s.active_tab = Some(1);
-        }).unwrap();
+        let web = tab("https://www.notion.so/x", ViewerMode::Web);
+        let tabs = vec![
+            tab("/p/a.rs", ViewerMode::Source),
+            tab("/secret/k.pem", ViewerMode::Source),
+            deleted_diff.clone(),
+            other_diff,
+            web.clone(),
+            tab("file:///c:/a", ViewerMode::Web),
+        ];
+        let saved = layouts(vec![("/p", single(tabs.clone(), Some(1))), ("/closed", single(vec![tabs[0].clone()], Some(0)))]);
+        settings.update(&mut |s| s.viewer_layouts = saved.clone()).unwrap();
 
-        let (restored, active) = restore_tabs(&fs, &settings);
-        assert_eq!(restored, vec![tabs[0].clone(), deleted_diff]);
-        assert_eq!(active, Some(0));
+        let restored = restore_layouts(&fs, &settings);
+        assert_eq!(restored.keys().collect::<Vec<_>>(), vec!["/p"]);
+        assert_eq!(restored["/p"].panes[0].tabs, vec![tabs[0].clone(), deleted_diff, web]);
+        assert_eq!(restored["/p"].panes[0].active, Some(0));
+    }
+
+    #[test]
+    fn old_tab_lists_are_split_into_project_layouts() {
+        let fs = FakeFs::with_dirs(&["/p", "/q"]);
+        fs.add_file("/p/a.rs");
+        fs.add_file("/q/b.rs");
+        let settings = FakeSettings::with_project("/p", &[]);
+        settings
+            .update(&mut |s| {
+                s.projects.push(crate::domain::entity::ProjectEntry { root: "/q".into(), active_sessions: vec![] });
+                s.viewer_tabs = vec![tab("/p/a.rs", ViewerMode::Source), tab("/q/b.rs", ViewerMode::Source), tab("/p/a.rs", ViewerMode::Markdown)];
+                s.active_tab = Some(2);
+            })
+            .unwrap();
+
+        let restored = restore_layouts(&fs, &settings);
+        assert_eq!(restored["/p"].panes[0].tabs.len(), 2);
+        assert_eq!(restored["/p"].panes[0].active, Some(1));
+        assert_eq!(restored["/q"].panes[0].tabs, vec![tab("/q/b.rs", ViewerMode::Source)]);
+        assert_eq!(restored["/q"].panes[0].active, Some(0));
+        // 옮긴 결과는 바로 저장되고 옛 목록은 비워진다.
+        let after = settings.load();
+        assert!(after.viewer_tabs.is_empty() && after.active_tab.is_none());
+        assert_eq!(after.viewer_layouts.len(), 2);
     }
 
     #[test]
