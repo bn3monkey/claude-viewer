@@ -77,7 +77,12 @@ pub struct Settings {
     pub claude_path: Option<String>,
     pub projects: Vec<ProjectEntry>,
     pub models: Vec<String>,
+    /// 기록이 없는 프로젝트의 새 세션이 쓰는 기본 모델. 보낼 때 덮어쓰지 않는다. (1.1.1)
     pub selected_model: String,
+    /// 세션 id → 그 세션에서 마지막으로 쓴 모델. (1.1.1)
+    pub session_models: BTreeMap<String, String>,
+    /// 프로젝트 루트 → 그 프로젝트에서 마지막으로 쓴 모델. 기록 없는 새 세션의 기본값. (1.1.1)
+    pub project_models: BTreeMap<String, String>,
     /// `--permission-mode` 값. None 이면 CLI 기본값을 쓴다.
     pub permission_mode: Option<String>,
     /// 설정 창에서 지정한 터미널 경로.
@@ -102,6 +107,8 @@ impl Default for Settings {
                 .map(String::from)
                 .to_vec(),
             selected_model: "claude-opus-5-5".into(),
+            session_models: BTreeMap::new(),
+            project_models: BTreeMap::new(),
             permission_mode: None,
             terminals: TerminalPaths::default(),
             drafts: BTreeMap::new(),

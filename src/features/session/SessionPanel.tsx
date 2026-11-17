@@ -4,7 +4,7 @@ import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ChevronDown, X } from "lucide-react";
 import type { ChatEvent } from "../../generated/entity/ChatEvent";
-import { useConnectionVM } from "../../viewmodel/useConnectionVM";
+import { modelFor, useConnectionVM } from "../../viewmodel/useConnectionVM";
 import { findSession, useProjectVM } from "../../viewmodel/useProjectVM";
 import { compactStep, summarizeUsage, useSessionVM } from "../../viewmodel/useSessionVM";
 import { useSubagentVM } from "../../viewmodel/useSubagentVM";
@@ -36,7 +36,9 @@ export function SessionPanel() {
   const selectedFile = useTreeVM((s) => s.selectedFile);
   const treeRoot = useTreeVM((s) => s.root);
   const settings = useConnectionVM((s) => s.settings);
-  const [model, setModel] = useState<string | null>(null);
+  const rememberModel = useConnectionVM((s) => s.rememberModel);
+  // 아직 보내지 않은 모델 선택. 세션마다 따로 둔다.
+  const [picked, setPicked] = useState<Record<string, string>>({});
   const [permissionMode, setPermissionMode] = useState<string | null | undefined>(undefined);
   const drafts = useSessionVM((s) => s.drafts);
   const setDraft = useSessionVM((s) => s.setDraft);
@@ -56,7 +58,7 @@ export function SessionPanel() {
     if (session && project) void loadSubagents(project.root, session.id);
   }, [session?.id, project?.root, session?.updatedAt, loadSubagents]);
 
-  const currentModel = model ?? settings?.selectedModel ?? settings?.models[0] ?? "";
+  const currentModel = (session ? picked[session.id] : undefined) ?? modelFor(settings, project?.root, session?.id);
   const currentPermission = permissionMode === undefined ? (settings?.permissionMode ?? null) : permissionMode;
   const draft = session ? (drafts[session.id] ?? "") : "";
   const attached = selectedFile && treeRoot === project?.root ? selectedFile : null;
@@ -82,6 +84,7 @@ export function SessionPanel() {
   const runCompact = () => {
     if (!session || !project) return;
     void compact({ root: project.root, sessionId: session.id, model: currentModel, permissionMode: currentPermission });
+    rememberModel(project.root, session.id, currentModel);
   };
 
   const commit = async () => {
@@ -96,7 +99,10 @@ export function SessionPanel() {
       attachedFile: attached,
     });
     setSending(false);
-    if (ok) setDraft(session.id, "");
+    if (ok) {
+      setDraft(session.id, "");
+      rememberModel(project.root, session.id, currentModel);
+    }
   };
 
   if (!session || !project) {
@@ -196,7 +202,7 @@ export function SessionPanel() {
                 <DropdownMenu.Portal>
                   <DropdownMenu.Content className="menu" align="start">
                     {settings?.models.map((m) => (
-                      <DropdownMenu.Item key={m} className="it" onSelect={() => setModel(m)}>
+                      <DropdownMenu.Item key={m} className="it" onSelect={() => session && setPicked((p) => ({ ...p, [session.id]: m }))}>
                         {m}
                         {m === currentModel && <span className="k">✓</span>}
                       </DropdownMenu.Item>

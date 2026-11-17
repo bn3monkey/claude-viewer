@@ -12,7 +12,21 @@ type ConnectionVM = {
   findAuto: () => Promise<void>;
   pickManual: () => Promise<void>;
   setManual: (path: string) => Promise<void>;
+  /** 보낸 뒤 백엔드가 저장한 세션·프로젝트별 모델을 로컬 사본에도 반영한다. */
+  rememberModel: (root: string, sessionId: string, model: string) => void;
 };
+
+/** 세션 기록 → 프로젝트 기록 → 기본 모델 순으로 고른다. */
+export function modelFor(settings: Settings | null, root: string | undefined, sessionId: string | undefined): string {
+  if (!settings) return "";
+  return (
+    (sessionId ? settings.sessionModels[sessionId] : undefined) ??
+    (root !== undefined ? settings.projectModels[root] : undefined) ??
+    settings.selectedModel ??
+    settings.models[0] ??
+    ""
+  );
+}
 
 export const useConnectionVM = create<ConnectionVM>((set, get) => ({
   binary: null,
@@ -45,5 +59,17 @@ export const useConnectionVM = create<ConnectionVM>((set, get) => ({
     set({ checking: true });
     const binary = await call<ClaudeBinary>("connection_set_manual", { path });
     set({ binary: binary ?? get().binary, checking: false });
+  },
+
+  rememberModel: (root, sessionId, model) => {
+    const settings = get().settings;
+    if (!settings) return;
+    set({
+      settings: {
+        ...settings,
+        sessionModels: { ...settings.sessionModels, [sessionId]: model },
+        projectModels: { ...settings.projectModels, [root]: model },
+      },
+    });
   },
 }));

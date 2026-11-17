@@ -95,7 +95,9 @@ pub fn send_message(deps: &SendDeps, request: &SendMessage) -> Result<String, Ap
 
     deps.process.write_stdin(request.session_id, &body)?;
     deps.settings.update(&mut |s| {
-        s.selected_model = request.model.to_string();
+        // 모델은 세션·프로젝트별로 기억한다. 전역으로 남기면 다른 프로젝트의 새 세션까지 따라간다.
+        s.session_models.insert(request.session_id.to_string(), request.model.to_string());
+        s.project_models.insert(request.root.to_string(), request.model.to_string());
         s.permission_mode = request.permission_mode.map(str::to_string);
     })?;
     Ok(body)
@@ -255,6 +257,7 @@ pub fn projects_of_session_dirs(
 mod tests {
     use super::*;
     use crate::domain::usecase::fakes::{meta, FakeFs, FakeProcess, FakeSessions, FakeSettings};
+    use crate::domain::entity::Settings;
 
     struct World {
         settings: FakeSettings,
@@ -325,7 +328,10 @@ mod tests {
         assert_eq!(spawned[0].model, "opus");
         assert_eq!(spawned[0].cwd, "/p");
         assert_eq!(world.process.written(), vec![("s".to_string(), "안녕".to_string())]);
-        assert_eq!(world.settings.load().selected_model, "opus");
+        let settings = world.settings.load();
+        assert_eq!(settings.session_models.get("s").map(String::as_str), Some("opus"));
+        assert_eq!(settings.project_models.get("/p").map(String::as_str), Some("opus"));
+        assert_eq!(settings.selected_model, Settings::default().selected_model);
     }
 
     #[test]

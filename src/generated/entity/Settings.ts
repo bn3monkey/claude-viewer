@@ -7,7 +7,19 @@ import type { TerminalPaths } from "./TerminalPaths";
 /**
  * 사용자가 settings.json 을 직접 편집할 수 있으므로 빠진 필드는 기본값으로 채운다.
  */
-export type Settings = { claudePath: string | null, projects: Array<ProjectEntry>, models: Array<string>, selectedModel: string, 
+export type Settings = { claudePath: string | null, projects: Array<ProjectEntry>, models: Array<string>, 
+/**
+ * 기록이 없는 프로젝트의 새 세션이 쓰는 기본 모델. 보낼 때 덮어쓰지 않는다. (1.1.1)
+ */
+selectedModel: string, 
+/**
+ * 세션 id → 그 세션에서 마지막으로 쓴 모델. (1.1.1)
+ */
+sessionModels: { [key in string]?: string }, 
+/**
+ * 프로젝트 루트 → 그 프로젝트에서 마지막으로 쓴 모델. 기록 없는 새 세션의 기본값. (1.1.1)
+ */
+projectModels: { [key in string]?: string }, 
 /**
  * `--permission-mode` 값. None 이면 CLI 기본값을 쓴다.
  */
