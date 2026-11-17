@@ -16,15 +16,17 @@ type ConnectionVM = {
   rememberModel: (root: string, sessionId: string, model: string) => void;
 };
 
-/** 세션 기록 → 프로젝트 기록 → 기본 모델 순으로 고른다. */
+/** 기록이 없을 때 쓰는 모델. 저장된 selectedModel 과 상관없이 언제나 Opus 다. */
+export const DEFAULT_MODEL = "claude-opus-5-5";
+
+/** 세션 기록 → 프로젝트 기록 → Opus 순으로 고른다. */
 export function modelFor(settings: Settings | null, root: string | undefined, sessionId: string | undefined): string {
-  if (!settings) return "";
+  const opus = settings?.models.find((m) => m.includes("opus")) ?? DEFAULT_MODEL;
+  if (!settings) return opus;
   return (
     (sessionId ? settings.sessionModels[sessionId] : undefined) ??
     (root !== undefined ? settings.projectModels[root] : undefined) ??
-    settings.selectedModel ??
-    settings.models[0] ??
-    ""
+    opus
   );
 }
 

@@ -9,7 +9,7 @@ import type { TerminalPaths } from "./TerminalPaths";
  */
 export type Settings = { claudePath: string | null, projects: Array<ProjectEntry>, models: Array<string>, 
 /**
- * 기록이 없는 프로젝트의 새 세션이 쓰는 기본 모델. 보낼 때 덮어쓰지 않는다. (1.1.1)
+ * 1.1.0 까지 마지막으로 쓴 모델을 전역으로 저장하던 값. 1.1.1 부터는 읽지 않는다 (기본은 언제나 Opus).
  */
 selectedModel: string, 
 /**
