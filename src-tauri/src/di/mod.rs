@@ -51,6 +51,7 @@ pub fn run() {
             project_vm::project_open,
             project_vm::project_close,
             session_vm::session_list,
+            session_vm::session_clear,
             session_vm::session_start,
             session_vm::session_resume,
             session_vm::session_read_log,

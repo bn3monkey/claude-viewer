@@ -93,6 +93,10 @@ impl SessionRepository for FakeSessions {
     fn read_subagent_log(&self, _root: &str, _session_id: &str, _agent_id: &str) -> Result<Vec<ChatEvent>, AppError> {
         Ok(Vec::new())
     }
+    fn delete(&self, _root: &str, session_id: &str) -> Result<(), AppError> {
+        self.0.lock().unwrap().remove(session_id);
+        Ok(())
+    }
     fn owns_session_dir(&self, _root: &str, _dir_name: &str) -> bool {
         false
     }

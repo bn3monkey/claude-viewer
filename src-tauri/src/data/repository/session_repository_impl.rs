@@ -66,6 +66,20 @@ impl SessionRepository for SessionRepositoryImpl {
         read_subagent_events(&path).map_err(|e| AppError::Io(e.to_string()))
     }
 
+    fn delete(&self, root: &str, session_id: &str) -> Result<(), AppError> {
+        for dir in session_dirs(&self.projects_dir, root) {
+            let log = dir.join(format!("{session_id}.jsonl"));
+            if log.is_file() {
+                std::fs::remove_file(&log).map_err(|e| AppError::Io(e.to_string()))?;
+            }
+            let side = dir.join(session_id);
+            if side.is_dir() {
+                std::fs::remove_dir_all(&side).map_err(|e| AppError::Io(e.to_string()))?;
+            }
+        }
+        Ok(())
+    }
+
     fn owns_session_dir(&self, root: &str, dir_name: &str) -> bool {
         encode_project_dir(root).eq_ignore_ascii_case(dir_name)
     }

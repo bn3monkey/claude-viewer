@@ -8,21 +8,37 @@ const formatDate = (ms: number | null) => (ms ? new Date(ms).toLocaleString() : 
 
 /** 새 활성화 세션: 기존 세션 중 하나를 고르거나 새 세션을 만든다. */
 export function NewSessionDialog({ root, onClose }: { root: string | null; onClose: () => void }) {
-  const { projects, listSessions, startSession, resumeSession } = useProjectVM();
+  const { projects, listSessions, clearSessions, startSession, resumeSession } = useProjectVM();
   const [sessions, setSessions] = useState<Session[] | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
+  const [confirmClear, setConfirmClear] = useState(false);
   const project = projects.find((p) => p.root === root);
   const active = new Set(project?.sessions.map((s) => s.id));
 
   useEffect(() => {
     setSessions(null);
     setPicked(null);
+    setConfirmClear(false);
     if (root) listSessions(root).then(setSessions);
   }, [root, listSessions]);
 
   const resume = async () => {
     if (root && picked) await resumeSession(root, picked);
     onClose();
+  };
+
+  const clearable = sessions?.filter((s) => !active.has(s.id)).length ?? 0;
+
+  const clear = async () => {
+    if (!root) return;
+    if (!confirmClear) {
+      setConfirmClear(true);
+      return;
+    }
+    setConfirmClear(false);
+    setPicked(null);
+    await clearSessions(root);
+    setSessions(await listSessions(root));
   };
 
   return (
@@ -67,6 +83,15 @@ export function NewSessionDialog({ root, onClose }: { root: string | null; onClo
           </div>
           <div className="dfoot">
             <button onClick={onClose}>취소</button>
+            <button
+              disabled={clearable === 0}
+              onClick={clear}
+              onBlur={() => setConfirmClear(false)}
+              title="활성화되지 않은 기존 세션 기록을 모두 삭제합니다"
+              style={confirmClear ? { color: "var(--red)" } : undefined}
+            >
+              {confirmClear ? `${clearable}개 세션 삭제 확인` : "세션 전부 Clear"}
+            </button>
             <span className="spacer" />
             <button
               onClick={async () => {

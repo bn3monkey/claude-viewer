@@ -18,6 +18,8 @@ type ProjectVM = {
   select: (selection: Selection | null) => void;
   toggle: (root: string) => void;
   listSessions: (root: string) => Promise<Session[]>;
+  /** 활성화되지 않은 기존 세션 로그를 모두 지운다. */
+  clearSessions: (root: string) => Promise<void>;
   startSession: (root: string) => Promise<void>;
   resumeSession: (root: string, id: string) => Promise<void>;
   closeSession: (root: string, id: string) => Promise<void>;
@@ -56,6 +58,10 @@ export const useProjectVM = create<ProjectVM>((set, get) => ({
   toggle: (root) => set({ collapsed: { ...get().collapsed, [root]: !get().collapsed[root] } }),
 
   listSessions: async (root) => (await call<Session[]>("session_list", { root })) ?? [],
+
+  clearSessions: async (root) => {
+    await call<number>("session_clear", { root });
+  },
 
   startSession: async (root) => {
     const id = await call<string>("session_start", { root });

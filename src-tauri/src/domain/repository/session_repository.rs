@@ -29,6 +29,8 @@ pub trait SessionRepository: Send + Sync {
     /// 세션이 띄운 서브에이전트들. 시작 순.
     fn subagents(&self, root: &str, session_id: &str) -> Result<Vec<SubagentRun>, AppError>;
     fn read_subagent_log(&self, root: &str, session_id: &str, agent_id: &str) -> Result<Vec<ChatEvent>, AppError>;
+    /// 세션 로그와 그 세션의 서브에이전트 로그 폴더를 지운다.
+    fn delete(&self, root: &str, session_id: &str) -> Result<(), AppError>;
     /// 이 세션 폴더 이름이 해당 프로젝트 것인지.
     fn owns_session_dir(&self, root: &str, dir_name: &str) -> bool;
     /// `~/.claude/projects` 아래 세션·서브에이전트 로그 변경을 알린다.

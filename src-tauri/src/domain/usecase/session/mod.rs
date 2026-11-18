@@ -21,6 +21,31 @@ pub fn list_sessions(
         .collect())
 }
 
+/// 프로젝트의 기존 세션 로그를 모두 지운다. 활성화된 세션은 남긴다. 지운 개수를 돌려준다.
+pub fn clear_sessions(
+    settings: &dyn SettingsRepository,
+    sessions: &dyn SessionRepository,
+    root: &str,
+) -> Result<usize, AppError> {
+    let active: Vec<String> = settings
+        .load()
+        .projects
+        .into_iter()
+        .find(|p| p.root == root)
+        .map(|p| p.active_sessions)
+        .unwrap_or_default();
+    let mut removed = 0;
+    for meta in sessions.scan(root)? {
+        if active.contains(&meta.id) {
+            continue;
+        }
+        ensure_log_id(&meta.id)?;
+        sessions.delete(root, &meta.id)?;
+        removed += 1;
+    }
+    Ok(removed)
+}
+
 /// 프로세스는 첫 메시지 때 띄운다. 그 전까지 모델을 바꿔도 다시 띄울 필요가 없다.
 pub fn start_session(settings: &dyn SettingsRepository, root: &str) -> Result<String, AppError> {
     let id = uuid::Uuid::new_v4().to_string();
@@ -460,6 +485,19 @@ mod tests {
             assert!(list_subagents(&world.sessions, "/p", bad).is_err(), "{bad}");
             assert!(read_subagent_log(&world.sessions, "/p", "abc", bad).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn clearing_sessions_keeps_active_ones() {
+        let world = World::new();
+        world.sessions.add(meta("s", "t", false));
+        world.sessions.add(meta("old1", "t", false));
+        world.sessions.add(meta("old2", "t", false));
+
+        assert_eq!(clear_sessions(&world.settings, &world.sessions, "/p").unwrap(), 2);
+
+        let left: Vec<String> = world.sessions.scan("/p").unwrap().into_iter().map(|m| m.id).collect();
+        assert_eq!(left, vec!["s".to_string()]);
     }
 
     #[test]

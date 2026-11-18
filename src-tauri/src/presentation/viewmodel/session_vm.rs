@@ -12,6 +12,12 @@ pub fn session_list(state: State<'_, AppState>, root: String) -> Result<Vec<Sess
     session::list_sessions(&*state.sessions, &*state.process, &root)
 }
 
+/// 활성화되지 않은 기존 세션 로그를 모두 지운다.
+#[tauri::command(async)]
+pub fn session_clear(state: State<'_, AppState>, root: String) -> Result<usize, AppError> {
+    session::clear_sessions(&*state.settings, &*state.sessions, &root)
+}
+
 #[tauri::command(async)]
 pub fn session_start(app: AppHandle, state: State<'_, AppState>, root: String) -> Result<String, AppError> {
     let id = session::start_session(&*state.settings, &root)?;
