@@ -1,11 +1,11 @@
 use tauri::{AppHandle, Emitter, Manager, State};
 
-use super::EVENT_TREE_CHANGED;
+use super::{EVENT_FILES_CHANGED, EVENT_TREE_CHANGED};
 use crate::domain::entity::{AppError, FsNode};
 use crate::domain::usecase::tree;
 use crate::presentation::state::AppState;
 
-/// 트리를 읽고, 이 프로젝트를 감시해 바뀌면 `tree://changed` 로 새 트리를 보낸다.
+/// 트리를 읽고, 이 프로젝트를 감시해 바뀌면 `fs://changed` 로 바뀐 경로를, `tree://changed` 로 새 트리를 보낸다.
 #[tauri::command(async)]
 pub fn tree_read(app: AppHandle, state: State<'_, AppState>, root: String) -> Result<FsNode, AppError> {
     let node = tree::read_tree(&state.tree_deps(), &root)?;
@@ -13,7 +13,8 @@ pub fn tree_read(app: AppHandle, state: State<'_, AppState>, root: String) -> Re
     let watched_root = root.clone();
     let guard = state.fs.watch(
         &root,
-        Box::new(move || {
+        Box::new(move |paths| {
+            let _ = handle.emit(EVENT_FILES_CHANGED, paths);
             let state = handle.state::<AppState>();
             if let Ok(node) = tree::read_tree(&state.tree_deps(), &watched_root) {
                 let _ = handle.emit(EVENT_TREE_CHANGED, node);

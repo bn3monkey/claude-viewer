@@ -11,6 +11,8 @@ pub mod web_vm;
 
 pub const EVENT_PROJECT_CHANGED: &str = "project://changed";
 pub const EVENT_TREE_CHANGED: &str = "tree://changed";
+/// 바뀐 파일의 절대 경로 목록을 보낸다. 뷰어는 자기 파일이 들어 있을 때만 다시 읽는다.
+pub const EVENT_FILES_CHANGED: &str = "fs://changed";
 pub const EVENT_VIEWER_OPEN: &str = "viewer://open";
 /// 서브에이전트 로그가 바뀐 세션 id 를 보낸다.
 pub const EVENT_SUBAGENT_CHANGED: &str = "subagent://changed";

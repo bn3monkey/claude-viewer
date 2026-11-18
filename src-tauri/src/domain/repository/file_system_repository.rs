@@ -19,5 +19,6 @@ pub trait FileSystemRepository: Send + Sync {
     /// 파일 전체를 바꿔 쓴다. 없는 파일은 만든다.
     fn write_text(&self, path: &Path, text: &str) -> Result<(), AppError>;
     /// .git 안의 변경은 알리지 않는다.
-    fn watch(&self, root: &str, on_change: Box<dyn Fn() + Send + Sync>) -> Result<WatchGuard, AppError>;
+    /// 바뀐 파일의 절대 경로 묶음을 넘긴다 (`.git` 안쪽은 뺀다).
+    fn watch(&self, root: &str, on_change: Box<dyn Fn(Vec<String>) + Send + Sync>) -> Result<WatchGuard, AppError>;
 }

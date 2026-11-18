@@ -4,7 +4,7 @@ import type { TerminalKind } from "../generated/entity/TerminalKind";
 import { useToasts } from "../app/toast";
 import { call, errorMessage } from "./invoke";
 import { useGitVM } from "./useGitVM";
-import { useTreeChanged } from "./useTreeVM";
+import { notifyFilesChanged, useTreeChanged } from "./useTreeVM";
 import { openShell } from "./useTerminalVM";
 
 /** pull 이 실패했을 때 보여줄 대화상자 내용 */
@@ -33,6 +33,7 @@ const runGit = (command: string, root: string): Promise<string | null> =>
 const afterChange = () => {
   void useGitVM.getState().refresh();
   useTreeChanged.setState((s) => ({ nonce: s.nonce + 1 }));
+  notifyFilesChanged(null);
 };
 
 export const usePullVM = create<PullVM>((set, get) => ({

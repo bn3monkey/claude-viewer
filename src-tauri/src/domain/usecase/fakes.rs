@@ -286,7 +286,7 @@ impl FileSystemRepository for FakeFs {
     fn read_bytes(&self, _path: &str) -> Result<Vec<u8>, AppError> {
         Ok(Vec::new())
     }
-    fn watch(&self, _root: &str, _on_change: Box<dyn Fn() + Send + Sync>) -> Result<WatchGuard, AppError> {
+    fn watch(&self, _root: &str, _on_change: Box<dyn Fn(Vec<String>) + Send + Sync>) -> Result<WatchGuard, AppError> {
         Ok(Box::new(()))
     }
 }

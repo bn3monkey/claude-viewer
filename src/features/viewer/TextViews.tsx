@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import type { TextContent } from "../../generated/entity/TextContent";
-import { useTreeChanged } from "../../viewmodel/useTreeVM";
+import { useFileVersion } from "../../viewmodel/useTreeVM";
 import { readText, useViewerVM, writeText, type ViewerTab } from "../../viewmodel/useViewerVM";
 import { eolOf, handleEditorKey, indentUnitOf, normalizeEol, symbolAtCaret, symbolAtSelection } from "./editing";
 import { highlight } from "./highlighter";
@@ -14,20 +14,28 @@ const REHIGHLIGHT_DELAY = 150;
 const LINE_HEIGHT = 18;
 const CODE_PADDING = 16;
 
-/** 파일이 바뀌면 다시 읽는다. `frozen` 이면 (저장 안 한 편집 중) 바깥 변경을 무시한다. */
+/** 이 파일이 바뀌면 다시 읽는다. `frozen` 이면 (저장 안 한 편집 중) 바깥 변경을 무시한다. */
 function useText(path: string, frozen = false, reload = 0) {
-  const nonce = useTreeChanged((s) => s.nonce);
+  const version = useFileVersion(path);
   const [content, setContent] = useState<TextContent | null>(null);
   const frozenRef = useRef(frozen);
   frozenRef.current = frozen;
   useEffect(() => {
     if (frozenRef.current) return;
     let alive = true;
-    readText(path).then((c) => alive && c && setContent(c));
+    // 내용이 같으면 이전 객체를 그대로 둬 다시 그리지 않는다 (스크롤·렌더 상태 유지).
+    readText(path).then(
+      (c) =>
+        alive &&
+        c &&
+        setContent((prev) =>
+          prev && prev.text === c.text && prev.truncated === c.truncated && prev.binary === c.binary ? prev : c,
+        ),
+    );
     return () => {
       alive = false;
     };
-  }, [path, nonce, reload]);
+  }, [path, version, reload]);
   return [content, setContent] as const;
 }
 

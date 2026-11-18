@@ -80,13 +80,17 @@ impl FileSystemRepository for FileSystemRepositoryImpl {
         fs::write(path, text).map_err(io)
     }
 
-    fn watch(&self, root: &str, on_change: Box<dyn Fn() + Send + Sync>) -> Result<WatchGuard, AppError> {
+    fn watch(&self, root: &str, on_change: Box<dyn Fn(Vec<String>) + Send + Sync>) -> Result<WatchGuard, AppError> {
         let handle = watcher::watch(Path::new(root), Duration::from_millis(500), move |paths| {
-            let relevant = paths.iter().any(|path| {
-                !path.components().any(|c| c.as_os_str() == ".git")
-            });
-            if relevant {
-                on_change();
+            let mut changed: Vec<String> = paths
+                .iter()
+                .filter(|path| !path.components().any(|c| c.as_os_str() == ".git"))
+                .map(|path| path.to_string_lossy().into_owned())
+                .collect();
+            changed.sort();
+            changed.dedup();
+            if !changed.is_empty() {
+                on_change(changed);
             }
         })
         .map_err(AppError::Io)?;

@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "
 import { ArrowDown, ArrowUp, Columns2, Rows2 } from "lucide-react";
 import type { GitDiff } from "../../generated/entity/GitDiff";
 import { readDiff } from "../../viewmodel/useGitVM";
-import { useTreeChanged } from "../../viewmodel/useTreeVM";
+import { useFileVersion } from "../../viewmodel/useTreeVM";
 import type { DiffContext } from "../../viewmodel/useViewerVM";
 import { parseUnifiedDiff, toSideBySide, type DiffLine, type ParsedDiff } from "./diffModel";
 import { tokenizeLines, type CodeToken } from "./highlighter";
@@ -16,7 +16,8 @@ type Tokens = { old: CodeToken[][] | null; new: CodeToken[][] | null };
 
 /** VS Code 처럼 그리는 diff. 나란히 / 한 줄 보기, 양쪽 줄 번호, 문법 색, 바뀐 단어 강조. */
 export function DiffView({ path, diff }: { path: string; diff: DiffContext }) {
-  const nonce = useTreeChanged((s) => s.nonce);
+  // 커밋 diff 는 고정이라 작업 트리 diff 만 이 파일이 바뀔 때 다시 읽는다.
+  const version = useFileVersion(path, undefined, !diff.commit);
   const [content, setContent] = useState<GitDiff | null>(null);
   const [layout, setLayoutState] = useState<Layout>(() => (localStorage.getItem(LAYOUT_KEY) === "inline" ? "inline" : "side"));
   const setLayout = (l: Layout) => {
@@ -30,7 +31,7 @@ export function DiffView({ path, diff }: { path: string; diff: DiffContext }) {
     return () => {
       alive = false;
     };
-  }, [path, diff.root, diff.branch, diff.commit, diff.untracked, nonce]);
+  }, [path, diff.root, diff.branch, diff.commit, diff.untracked, version]);
 
   const parsed = useMemo(() => (content && !content.unsupported ? parseUnifiedDiff(content.text) : null), [content]);
 
